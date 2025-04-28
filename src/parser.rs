@@ -7,163 +7,86 @@ pub struct Parser<'a> {
     input: Peekable<Chars<'a>>,
 }
 
+pub struct Parser<'a> {
+        tokens: Vec<&'a str>,
+            position: usize,
+}
+
 impl<'a> Parser<'a> {
     pub fn new(source: &'a str) -> Self {
-        Parser {
-            input: source.chars().peekable(),
-        }
+        let tokens = source
+            .split_whitespace()
+            .flat_map(|token| token.split_inclusive(&['(', ')', ';', '=', '.'][..]))
+            .map(str::trim)
+            .filter(|token| !token.is_empty())
+            .collect();
+        Parser { tokens, position: 0 }
     }
 
-    pub fn parse(&mut self) -> Result<Expr, String> {
-        let mut exprs = Vec::new();
-        loop {
-            self.skip_whitespace();
-            if self.input.peek().is_none() {
-                break;
-            }
-            let expr = self.parse_expression()?;
-            exprs.push(expr);
-            self.skip_whitespace();
-            if self.consume(';') {
-                continue;
-            } else {
-                break;
-            }
+    fn peek(&self) -> Option<&&'a str> {
+        self.tokens.get(self.position)
+    }
+
+    fn next(&mut self) -> Option<&'a str> {
+        let tok = self.tokens.get(self.position).copied();
+        self.position += 1;
+        tok
+    }
+
+    pub fn parse_expression_list(&mut self) -> Result<Expr, String> {
+        let mut exprs = vec![self.parse_simple_expr()?];
+
+        while let Some(&";") = self.peek() {
+            self.next(); // consume ";"
+            exprs.push(self.parse_simple_expr()?);
         }
+
         if exprs.len() == 1 {
-            Ok(exprs.into_iter().next().unwrap())
+            Ok(exprs.remove(0))
         } else {
             Ok(Expr::Sequence(exprs))
         }
     }
 
-    fn parse_expression(&mut self) -> Result<Expr, String> {
-        self.skip_whitespace();
-        if self.peek_is('L') {
-            self.parse_function()
-        } else if self.peek_is('(') {
-            self.parse_paren()
-        } else if let Some(expr) = self.parse_define()? {
-            Ok(expr)
-        } else {
-            self.parse_words()
-        }
-    }
-
-    fn parse_function(&mut self) -> Result<Expr, String> {
-        self.expect('L')?;
-        self.skip_whitespace();
-        let mut params = vec![self.parse_word()?];
-        while let Some(&ch) = self.input.peek() {
-            if ch.is_alphanumeric() || ch == '_' {
-                params.push(self.parse_word()?);
-            } else if ch == ' ' {
-                self.input.next();
-            } else {
-                break;
+    fn parse_simple_expr(&mut self) -> Result<Expr, String> {
+        match self.peek() {
+            Some(&"(") => {
+                self.next(); // consume "("
+                let expr = self.parse_expression_list()?;
+                match self.next() {
+                    Some(")") => Ok(expr),
+                    _ => Err("Expected ')'".to_string()),
+                }
             }
-        }
-        self.expect('.')?;
-        let body = self.parse_expression()?;
-        Ok(Expr::Function(params, Box::new(body)))
-    }
-
-    fn parse_define(&mut self) -> Result<Option<Expr>, String> {
-        let saved_input = self.input.clone();
-        self.skip_whitespace();
-        if let Ok(name) = self.parse_word() {
-            self.skip_whitespace();
-            if self.consume('=') {
-                self.skip_whitespace();
-                let body = self.parse_primary()?; // !!! 여기 수정: parse_primary()로 딱 하나만 읽기
-                return Ok(Some(Expr::Define(name, Box::new(body))));
+            Some(&"L") => {
+                self.next();
+                let mut params = vec![];
+                while let Some(&tok) = self.peek() {
+                    if tok == "." {
+                        self.next();
+                        break;
+                    }
+                    params.push(tok.to_string());
+                    self.next();
+                }
+                let body = self.parse_simple_expr()?;
+                Ok(Expr::Function(params, Box::new(body)))
             }
-        }
-        self.input = saved_input;
-        Ok(None)
-    }
-
-    fn parse_words(&mut self) -> Result<Expr, String> {
-        let mut words = vec![Expr::Word(self.parse_word()?)];
-        self.skip_whitespace();
-        while let Some(&ch) = self.input.peek() {
-            if ch.is_alphanumeric() || ch == '_' {
-                words.push(Expr::Word(self.parse_word()?));
-                self.skip_whitespace();
-            } else {
-                break;
+            Some(&tok) if tok.chars().all(|c| c.is_alphanumeric() || c == '_') => {
+                self.next();
+                if let Some(&"=") = self.peek() {
+                    self.next();
+                    let expr = self.parse_simple_expr()?;
+                    Ok(Expr::Define(tok.to_string(), Box::new(expr)))
+                } else {
+                    Ok(Expr::Word(tok.to_string()))
+                }
             }
-        }
-        if words.len() == 1 {
-            Ok(words.into_iter().next().unwrap())
-        } else {
-            Ok(Expr::Words(words))
+            _ => Err("Unexpected token".to_string()),
         }
     }
 
-    fn parse_paren(&mut self) -> Result<Expr, String> {
-        self.expect('(')?;
-        let expr = self.parse_expression()?;
-        self.expect(')')?;
-        Ok(Expr::Paren(Box::new(expr)))
-    }
-
-    fn parse_primary(&mut self) -> Result<Expr, String> {
-        self.skip_whitespace();
-        if self.peek_is('L') {
-            self.parse_function()
-        } else if self.peek_is('(') {
-            self.parse_paren()
-        } else {
-            self.parse_words()
-        }
-    }
-
-    fn parse_word(&mut self) -> Result<String, String> {
-        let mut word = String::new();
-        while let Some(&ch) = self.input.peek() {
-            if ch.is_alphanumeric() || ch == '_' {
-                word.push(ch);
-                self.input.next();
-            } else {
-                break;
-            }
-        }
-        if word.is_empty() {
-            Err("Expected word".to_string())
-        } else {
-            Ok(word)
-        }
-    }
-
-    fn skip_whitespace(&mut self) {
-        while let Some(&ch) = self.input.peek() {
-            if ch == ' ' || ch == '\n' || ch == '\t' || ch == '\r' {
-                self.input.next();
-            } else {
-                break;
-            }
-        }
-    }
-
-    fn consume(&mut self, expected: char) -> bool {
-        if self.input.peek() == Some(&expected) {
-            self.input.next();
-            true
-        } else {
-            false
-        }
-    }
-
-    fn expect(&mut self, expected: char) -> Result<(), String> {
-        if self.input.next() == Some(expected) {
-            Ok(())
-        } else {
-            Err(format!("Expected '{}'", expected))
-        }
-    }
-
-    fn peek_is(&mut self, expected: char) -> bool {
-        self.input.peek() == Some(&expected)
+    pub fn parse(&mut self) -> Result<Expr, String> {
+        self.parse_expression_list()
     }
 }

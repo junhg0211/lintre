@@ -4,9 +4,9 @@ false = L a b. b;
 and = L a b. a b false;
 or = L a b. a true b;
 
-xor = L a b. {
+xor = L a b. (
     not = L a. a false true;
     a (not b) b
-};
+);
 
-zor true false
+xor true false
