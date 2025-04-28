@@ -61,7 +61,9 @@ impl Interpreter {
                 Ok(Value::Closure(fresh_params, Box::new(renamed_body), self.env.clone()))
             }
             Expr::Define(name, body) => {
-                let val = self.eval(*body)?;
+                let mut sub_interpreter = Interpreter::new(self.debug);
+                sub_interpreter.env = self.env.clone(); // 기존 env를 복사해서 새 인스턴스에 넣어줌
+                let val = sub_interpreter.eval(*body)?; // fresh_name 카운터는 새로 초기화
                 self.env.insert(name.clone(), val.clone());
                 Ok(val)
             }
