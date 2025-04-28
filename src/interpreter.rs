@@ -1,7 +1,7 @@
 use crate::ast::Expr;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Closure(Vec<String>, Box<Expr>, Env),
     Word(String),
@@ -131,6 +131,11 @@ impl Interpreter {
     }
 
     pub fn format_result(&self, value: &Value) -> String {
+        for (name, v) in &self.env {
+            if v == value {
+                return name.clone();
+            }
+        }
         match value {
             Value::Word(w) => w.clone(),
             Value::Closure(params, body, _) => {
