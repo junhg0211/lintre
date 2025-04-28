@@ -1,4 +1,5 @@
 use crate::ast::Expr;
+use regex::Regex;
 
 pub struct Parser<'a> {
     tokens: Vec<&'a str>,
@@ -7,11 +8,9 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     pub fn new(source: &'a str) -> Self {
-        let tokens = source
-            .split_whitespace()
-            .flat_map(|token| token.split_inclusive(&['(', ')', ';', '=', '.'][..]))
-            .map(str::trim)
-            .filter(|token| !token.is_empty())
+        let re = Regex::new(r"[\w_]+|[();=.]").unwrap();
+        let tokens = re.find_iter(source)
+            .map(|mat| mat.as_str())
             .collect();
         Parser { tokens, position: 0 }
     }
@@ -26,20 +25,7 @@ impl<'a> Parser<'a> {
         tok
     }
 
-    pub fn parse_expression_list(&mut self) -> Result<Expr, String> {
-        let mut exprs = vec![self.parse_simple_expr()?];
-        while let Some(&";") = self.peek() {
-            self.next();
-            exprs.push(self.parse_simple_expr()?);
-        }
-        if exprs.len() == 1 {
-            Ok(exprs.remove(0))
-        } else {
-            Ok(Expr::Sequence(exprs))
-        }
-    }
-
-    fn parse_simple_expr(&mut self) -> Result<Expr, String> {
+    fn parse_atom(&mut self) -> Result<Expr, String> {
         match self.peek() {
             Some(&"(") => {
                 self.next();
@@ -60,20 +46,45 @@ impl<'a> Parser<'a> {
                     params.push(tok.to_string());
                     self.next();
                 }
-                let body = self.parse_simple_expr()?;
+                let body = self.parse_application()?;
                 Ok(Expr::Function(params, Box::new(body)))
             }
             Some(&tok) if tok.chars().all(|c| c.is_alphanumeric() || c == '_') => {
                 self.next();
                 if let Some(&"=") = self.peek() {
                     self.next();
-                    let expr = self.parse_simple_expr()?;
+                    let expr = self.parse_application()?;
                     Ok(Expr::Define(tok.to_string(), Box::new(expr)))
                 } else {
                     Ok(Expr::Word(tok.to_string()))
                 }
             }
             _ => Err("Unexpected token".to_string()),
+        }
+    }
+
+    fn parse_application(&mut self) -> Result<Expr, String> {
+        let mut expr = self.parse_atom()?;
+        while let Some(&tok) = self.peek() {
+            if tok == ")" || tok == ";" {
+                break;
+            }
+            let arg = self.parse_atom()?;
+            expr = Expr::Application(Box::new(expr), Box::new(arg));
+        }
+        Ok(expr)
+    }
+
+    fn parse_expression_list(&mut self) -> Result<Expr, String> {
+        let mut exprs = vec![self.parse_application()?];
+        while let Some(&";") = self.peek() {
+            self.next();
+            exprs.push(self.parse_application()?);
+        }
+        if exprs.len() == 1 {
+            Ok(exprs.remove(0))
+        } else {
+            Ok(Expr::Sequence(exprs))
         }
     }
 

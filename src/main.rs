@@ -19,5 +19,9 @@ fn main() {
     let mut interpreter = interpreter::Interpreter::new();
     let result = interpreter.eval(ast).expect("Evaluation error!");
 
-    println!("{:?}", result);
+    if let Some(name) = interpreter.find_name_for_value(&result) {
+        println!("{}", name);
+    } else {
+        println!("{:?}", result);
+    }
 }
