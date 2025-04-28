@@ -1,5 +1,5 @@
 [package]
-name = "lambda_interpreter"
+name = "lintre"
 version = "0.1.0"
 
 [dependencies]
