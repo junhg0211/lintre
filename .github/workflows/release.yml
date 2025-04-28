@@ -37,7 +37,7 @@ jobs:
         run: cargo build --release
 
       - name: Check binary size
-        f: matrix.os != 'windows-latest'
+        if: matrix.os != 'windows-latest'
         run: ls -lh target/release/lintre
 
       - name: Package release artifact (Linux / macOS)
