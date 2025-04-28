@@ -44,6 +44,7 @@ jobs:
           tag_name: v${{ env.version }}
           name: Release v${{ env.version }}
           files: |
-            target/release/*
+            target/release/lintre
+            target/release/lintre.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
