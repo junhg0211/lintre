@@ -35,10 +35,10 @@ jobs:
           echo "version=$version" >> $GITHUB_ENV
 
       - name: Build project
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release
+        run: cargo build --release
+
+      - name: Check binary size
+        run: ls -lh target/release/lintre
 
       - name: Package release artifact (Linux / macOS)
         if: matrix.os != 'windows-latest'
