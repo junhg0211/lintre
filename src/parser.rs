@@ -103,9 +103,21 @@ impl<'a> Parser<'a> {
 
     fn parse_paren(&mut self) -> Result<Expr, String> {
         self.expect('(')?;
-        let expr = self.parse_expression()?;
+
+        let mut exprs = vec![self.parse_expression()?];
+
+        while self.peek_is(';') {
+            self.expect(';')?;
+            exprs.push(self.parse_expression()?);
+        }
+
         self.expect(')')?;
-        Ok(Expr::Paren(Box::new(expr)))
+
+        if exprs.len() == 1 {
+            Ok(exprs.into_iter().next().unwrap())
+        } else {
+            Ok(Expr::Sequence(exprs))
+        }
     }
 
     fn parse_primary(&mut self) -> Result<Expr, String> {

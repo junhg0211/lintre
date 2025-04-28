@@ -1,3 +1,10 @@
 true = L a b. a;
 false = L a b. b;
-true false true
+
+xor = L a b. (
+    not = L x. x false true;
+
+    a (not b) b
+);
+
+xor true

@@ -27,6 +27,8 @@ fn main() {
     let mut parser = parser::Parser::new(&code);
     let ast = parser.parse().expect("Parse error");
 
+    println!("{:#?}", ast);
+
     let mut interpreter = interpreter::Interpreter::new(debug);
 
     match interpreter.eval(ast) {
