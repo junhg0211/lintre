@@ -1,4 +1,4 @@
-use crate::ast::Expr;  // parser::ast가 아니라 ast
+use crate::ast::Expr;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -29,16 +29,20 @@ impl Interpreter {
     pub fn eval(&mut self, expr: Expr) -> Result<Value, String> {
         match expr {
             Expr::Word(name) => {
-                self.env.get(&name)
-                    .cloned()
-                    .ok_or_else(|| format!("Undefined variable: {}", name))
+                if let Some(v) = self.env.get(&name) {
+                    Ok(v.clone())
+                } else {
+                    Ok(Value::Word(name))
+                }
             }
-            Expr::Words(words) => {
-                let mut iter = words.into_iter();
-                let mut func = self.eval(iter.next().unwrap())?;
-                for arg in iter {
-                    let arg_val = self.eval(arg)?;
-                    func = self.apply(func, arg_val)?;
+            Expr::Words(mut words) => {
+                if words.is_empty() {
+                    return Err("Empty Words expression.".to_string());
+                }
+                let mut func = self.eval(words.remove(0))?;
+                for word in words {
+                    let arg = self.eval(word)?;
+                    func = self.apply(func, arg)?;
                 }
                 Ok(func)
             }
@@ -48,8 +52,8 @@ impl Interpreter {
                     .collect::<Vec<_>>();
 
                 let mut mapping = HashMap::new();
-                for (old, new) in params.into_iter().zip(fresh_params.iter()) {
-                    mapping.insert(old, new.clone());
+                for (old, new) in params.iter().zip(fresh_params.iter()) {
+                    mapping.insert(old.clone(), new.clone());
                 }
 
                 let renamed_body = self.rename(*body, &mapping);
@@ -62,11 +66,23 @@ impl Interpreter {
                 Ok(val)
             }
             Expr::Sequence(exprs) => {
-                let mut result = Value::Word("()".to_string());
-                for e in exprs {
-                    result = self.eval(e)?;
+                let mut last_expr = None;
+                for expr in exprs {
+                    match expr {
+                        Expr::Define(name, body) => {
+                            let val = self.eval(*body)?;
+                            self.env.insert(name, val);
+                        }
+                        _ => {
+                            last_expr = Some(expr);
+                        }
+                    }
                 }
-                Ok(result)
+                if let Some(e) = last_expr {
+                    self.eval(e)
+                } else {
+                    Ok(Value::Word("()".to_string()))
+                }
             }
             Expr::Paren(inner) => self.eval(*inner),
         }
@@ -104,7 +120,7 @@ impl Interpreter {
                     next.name_counter = self.name_counter.clone();
                     next.previous_states = self.previous_states.clone();
                     next.eval(*body)
-                } else {
+                } else{
                     Ok(Value::Closure(params, body, closure_env))
                 }
             }
@@ -124,7 +140,7 @@ impl Interpreter {
     fn pretty_value(&self, v: &Value) -> String {
         match v {
             Value::Word(w) => w.clone(),
-            Value::Closure(params, body, _) => {
+            Value::Closure(params, _body, _) => {
                 format!("(λ{} . ...)", params.join(" "))
             }
         }
@@ -137,9 +153,9 @@ impl Interpreter {
                 .map(|e| self.pretty_expr(e))
                 .collect::<Vec<_>>()
                 .join(" "),
-                Expr::Function(params, body) => {
-                    format!("(λ{} . {})", params.join(" "), self.pretty_expr(body))
-                }
+            Expr::Function(params, body) => {
+                format!("(λ{} . {})", params.join(" "), self.pretty_expr(body))
+            }
             Expr::Define(name, body) => {
                 format!("{} = {}", name, self.pretty_expr(body))
             }
@@ -172,18 +188,18 @@ impl Interpreter {
             }
             Expr::Words(ws) => {
                 Expr::Words(ws.into_iter()
-                            .map(|e| self.rename(e, mapping))
-                            .collect())
+                    .map(|e| self.rename(e, mapping))
+                    .collect())
             }
             Expr::Function(params, body) => {
                 let mut new_mapping = mapping.clone();
                 let new_params = params.into_iter()
-                    .map(|p| {   // 그냥 p
+                    .map(|p| {
                         let fresh = self.fresh_name(&p);
-                        new_mapping.insert(p.clone(), fresh.clone());
+                        new_mapping.insert(p, fresh.clone());
                         fresh
                     })
-                .collect();
+                    .collect();
                 let new_body = self.rename(*body, &new_mapping);
                 Expr::Function(new_params, Box::new(new_body))
             }
@@ -192,8 +208,8 @@ impl Interpreter {
             }
             Expr::Sequence(seq) => {
                 Expr::Sequence(seq.into_iter()
-                               .map(|e| self.rename(e, mapping))
-                               .collect())
+                    .map(|e| self.rename(e, mapping))
+                    .collect())
             }
             Expr::Paren(inner) => {
                 Expr::Paren(Box::new(self.rename(*inner, mapping)))

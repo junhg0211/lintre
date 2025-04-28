@@ -1,4 +1,5 @@
 use std::env;
+
 mod ast;
 mod parser;
 mod interpreter;
@@ -20,10 +21,16 @@ fn main() {
 
     let code = std::fs::read_to_string(filename)
         .expect("Failed to read source file.");
+
     let ast = parser::parse(&code).expect("Parse error!");
+
     let mut interpreter = interpreter::Interpreter::new(debug);
+
+    // 여기 고쳐야 함!
     match interpreter.eval(ast) {
-        Ok(result) => println!("{}", interpreter.format_result(&result)),
+        Ok(result) => {
+            println!("{}", interpreter.format_result(&result));
+        }
         Err(e) => eprintln!("Error: {}", e),
     }
 }

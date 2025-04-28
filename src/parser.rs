@@ -37,7 +37,17 @@ impl<'a> Parser<'a> {
         match self.input.peek() {
             Some('L') => {
                 self.input.next();
-                let params = self.parse_words()?;
+                self.skip_whitespace();
+                let mut params = vec![self.parse_word()?];
+                while let Some(&ch) = self.input.peek() {
+                    if ch.is_alphanumeric() || ch == '_' {
+                        params.push(self.parse_word()?);
+                    } else if ch == ' ' {
+                        self.input.next();
+                    } else {
+                        break;
+                    }
+                }
                 self.expect('.')?;
                 let body = self.parse_expression()?;
                 Ok(Expr::Function(params, Box::new(body)))

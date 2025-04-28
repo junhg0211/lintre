@@ -1,0 +1,3 @@
+true = L a b. a;
+false = L a b. b;
+true false true
