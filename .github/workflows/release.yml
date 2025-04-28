@@ -7,14 +7,14 @@ on:
 
 permissions:
   contents: write
-  packages: write
 
 jobs:
   build-and-release:
     if: startsWith(github.event.head_commit.message, 'release')
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -27,22 +27,22 @@ jobs:
 
       - name: Extract version from Cargo.toml
         id: get_version
+        shell: bash
         run: |
           version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-          echo "Found version: $version"
-          echo "::set-output name=version::$version"
+          echo "version=$version" >> $GITHUB_ENV
 
-      - name: Build release
+      - name: Build project
         uses: actions-rs/cargo@v1
         with:
           command: build
           args: --release
 
-      - name: Upload release
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.get_version.outputs.version }}
-          name: Release v${{ steps.get_version.outputs.version }}
+          tag_name: v${{ env.version }}
+          name: Release v${{ env.version }}
           files: |
             target/release/*
         env:
