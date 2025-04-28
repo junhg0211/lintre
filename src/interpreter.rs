@@ -147,8 +147,8 @@ impl Interpreter {
     fn pretty_value(&self, v: &Value) -> String {
         match v {
             Value::Word(w) => w.clone(),
-            Value::Closure(params, _body, _) => {
-                format!("(λ{} . ...)", params.join(" "))
+            Value::Closure(params, body, _) => {
+                format!("(λ{} . {})", params.join(" "), self.pretty_expr(body))
             }
         }
     }
