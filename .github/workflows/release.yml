@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,13 +38,24 @@ jobs:
           command: build
           args: --release
 
-      - name: Upload release assets
+      - name: Package release artifact (Linux / macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/release
+          zip lintre-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'macos' }}.zip lintre
+
+      - name: Package release artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd target/release
+          powershell Compress-Archive -Path lintre.exe -DestinationPath lintre-windows.zip
+
+      - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.version }}
           name: Release v${{ env.version }}
           files: |
-            target/release/lintre
-            target/release/lintre.exe
+            target/release/lintre-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
