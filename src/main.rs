@@ -1,4 +1,5 @@
 use std::env;
+use std::fs;
 
 mod ast;
 mod parser;
@@ -6,6 +7,7 @@ mod interpreter;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+
     let mut debug = false;
     let filename: &str;
 
@@ -19,11 +21,11 @@ fn main() {
         std::process::exit(1);
     }
 
-    let code = std::fs::read_to_string(filename)
+    let code = fs::read_to_string(filename)
         .expect("Failed to read source file.");
 
-    let mut p = parser::Parser::new(&code);
-    let ast = p.parse().expect("Parse error!");
+    let mut parser = parser::Parser::new(&code);
+    let ast = parser.parse().expect("Parse error");
 
     let mut interpreter = interpreter::Interpreter::new(debug);
 
