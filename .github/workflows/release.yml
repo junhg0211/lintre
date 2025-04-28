@@ -34,7 +34,7 @@ jobs:
           echo "version=$version" >> $GITHUB_ENV
 
       - name: Build project
-        run: cargo build --release
+        run: cargo build --manifest-path Cargo.toml --release -v
 
       - name: Check binary size
         if: matrix.os != 'windows-latest'
