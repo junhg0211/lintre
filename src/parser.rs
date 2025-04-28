@@ -1,15 +1,8 @@
-use std::iter::Peekable;
-use std::str::Chars;
-
 use crate::ast::Expr;
 
 pub struct Parser<'a> {
-    input: Peekable<Chars<'a>>,
-}
-
-pub struct Parser<'a> {
-        tokens: Vec<&'a str>,
-            position: usize,
+    tokens: Vec<&'a str>,
+    position: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -35,12 +28,10 @@ impl<'a> Parser<'a> {
 
     pub fn parse_expression_list(&mut self) -> Result<Expr, String> {
         let mut exprs = vec![self.parse_simple_expr()?];
-
         while let Some(&";") = self.peek() {
-            self.next(); // consume ";"
+            self.next();
             exprs.push(self.parse_simple_expr()?);
         }
-
         if exprs.len() == 1 {
             Ok(exprs.remove(0))
         } else {
@@ -51,7 +42,7 @@ impl<'a> Parser<'a> {
     fn parse_simple_expr(&mut self) -> Result<Expr, String> {
         match self.peek() {
             Some(&"(") => {
-                self.next(); // consume "("
+                self.next();
                 let expr = self.parse_expression_list()?;
                 match self.next() {
                     Some(")") => Ok(expr),
