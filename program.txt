@@ -1,3 +1,12 @@
 true = L a b. a;
 false = L a b. b;
-true false true
+
+and = L a b. a b false;
+or = L a b. a true b;
+
+xor = L a b. {
+    not = L a. a false true;
+    a (not b) b
+};
+
+zor true false
