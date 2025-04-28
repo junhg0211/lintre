@@ -21,9 +21,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
       - name: Install Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -32,15 +29,15 @@ jobs:
 
       - name: Extract version from Cargo.toml
         id: get_version
-        shell: bash
         run: |
-          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          version=$(grep '^version =' Cargo.toml | head -n1 | sed 's/version = "\(.*\)"/\1/')
           echo "version=$version" >> $GITHUB_ENV
 
       - name: Build project
         run: cargo build --release
 
       - name: Check binary size
+        f: matrix.os != 'windows-latest'
         run: ls -lh target/release/lintre
 
       - name: Package release artifact (Linux / macOS)
