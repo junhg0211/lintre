@@ -73,7 +73,7 @@ fn closure_eq_ignoring_env(a: &Value, b: &Value) -> bool {
     }
 }
 
-fn pretty_print_value_as_source(value: &Value, env: &Env) {
+n pretty_print_value_as_source(value: &Value, env: &Env) {
     for (name, captured_val) in env {
         if closure_eq_ignoring_env(captured_val, value) {
             println!("{}", name);
@@ -91,7 +91,16 @@ fn pretty_print_value_as_source(value: &Value, env: &Env) {
                 print!("{}", param);
             }
             print!(". ");
-            pretty_print_expr_as_source(body);
+            match &**body {
+                Expr::Sequence(exprs) => {
+                    if let Some(last) = exprs.last() {
+                        pretty_print_expr_as_source(last);
+                    }
+                }
+                _ => {
+                    pretty_print_expr_as_source(body);
+                }
+            }
             println!();
         }
         Value::Unit => {
