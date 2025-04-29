@@ -6,7 +6,7 @@ mod interpreter;
 use tokenizer::tokenize;
 use parser::Parser;
 use ast::Expr;
-use interpreter::{Env, Value, eval};
+use interpreter::{Env, Value, eval, normalize};
 
 pub enum TraceMode {
     None,
@@ -35,7 +35,7 @@ fn main() -> Result<(), String> {
     let mut step_count = 0;
     let result = eval_document(&ast, &mut env, &mut step_count, &trace_mode)?;
 
-    pretty_print_value_with_env(&result, &env);
+    pretty_print_value_as_source(&result, &env);
 
     Ok(())
 }
@@ -62,7 +62,18 @@ fn eval_document(expr: &Expr, env: &mut Env, step_count: &mut usize, trace_mode:
     }
 }
 
-fn pretty_print_value_with_env(value: &Value, env: &Env) {
+fn closure_eq_ignoring_env(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Closure(params_a, body_a, _), Value::Closure(params_b, body_b, _)) => {
+            normalize(&Expr::Lambda(params_a.clone(), body_a.clone()))
+                == normalize(&Expr::Lambda(params_b.clone(), body_b.clone()))
+        }
+        (Value::Unit, Value::Unit) => true,
+        _ => false,
+    }
+}
+
+fn pretty_print_value_as_source(value: &Value, env: &Env) {
     for (name, captured_val) in env {
         if closure_eq_ignoring_env(captured_val, value) {
             println!("{}", name);
@@ -71,32 +82,17 @@ fn pretty_print_value_with_env(value: &Value, env: &Env) {
     }
 
     match value {
-        Value::Closure(params, body, capture_env) => {
-            print!("Closure(");
+        Value::Closure(params, body, _) => {
+            print!("L ");
             for (i, param) in params.iter().enumerate() {
                 if i > 0 {
-                    print!(", ");
+                    print!(" ");
                 }
                 print!("{}", param);
             }
-            print!(") -> ");
-            pretty_print_expr(body);
+            print!(". ");
+            pretty_print_expr_as_source(body);
             println!();
-
-            if !capture_env.is_empty() {
-                println!("Captured:");
-                for (k, v) in capture_env {
-                    print!("  {}: ", k);
-                    match v {
-                        Value::Closure(_, _, _) => {
-                            println!("Closure(...)");
-                        }
-                        Value::Unit => {
-                            println!("unit");
-                        }
-                    }
-                }
-            }
         }
         Value::Unit => {
             println!("unit");
@@ -104,26 +100,16 @@ fn pretty_print_value_with_env(value: &Value, env: &Env) {
     }
 }
 
-fn closure_eq_ignoring_env(a: &Value, b: &Value) -> bool {
-    match (a, b) {
-        (Value::Closure(params_a, body_a, _), Value::Closure(params_b, body_b, _)) => {
-            params_a == params_b && body_a == body_b
-        }
-        (Value::Unit, Value::Unit) => true,
-        _ => false,
-    }
-}
-
-fn pretty_print_expr(expr: &Expr) {
+fn pretty_print_expr_as_source(expr: &Expr) {
     match expr {
         Expr::Var(name) => {
             print!("{}", name);
         }
         Expr::Apply(f, arg) => {
             print!("(");
-            pretty_print_expr(f);
+            pretty_print_expr_as_source(f);
             print!(" ");
-            pretty_print_expr(arg);
+            pretty_print_expr_as_source(arg);
             print!(")");
         }
         Expr::Lambda(params, body) => {
@@ -135,21 +121,20 @@ fn pretty_print_expr(expr: &Expr) {
                 print!("{}", param);
             }
             print!(". ");
-            pretty_print_expr(body);
+            pretty_print_expr_as_source(body);
         }
         Expr::Define(name, expr) => {
             print!("{} = ", name);
-            pretty_print_expr(expr);
+            pretty_print_expr_as_source(expr);
+            print!("; ");
         }
         Expr::Sequence(exprs) => {
-            print!("(");
             for (i, e) in exprs.iter().enumerate() {
                 if i > 0 {
-                    print!("; ");
+                    print!(" ");
                 }
-                pretty_print_expr(e);
+                pretty_print_expr_as_source(e);
             }
-            print!(")");
         }
     }
 }
