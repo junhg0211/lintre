@@ -1,230 +1,101 @@
-use std::collections::HashMap;
 use crate::ast::Expr;
+use std::collections::HashMap;
 
 pub type Env = HashMap<String, Value>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Value {
     Closure(Vec<String>, Box<Expr>, Env),
     Unit,
 }
 
-pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> Result<Value, String> {
-    *step_count += 1;
-    if *step_count > 10000 {
-        return Err("Infinite beta reduction detected!".to_string());
-    }
-
-    match expr {
-        Expr::Var(name) => {
-            if let Some(val) = env.get(name) {
-                Ok(val.clone())
-            } else {
-                Err(format!("Unbound variable: {}", name))
-            }
-        }
-        Expr::Lambda(params, body) => {
-            Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
-        }
-        Expr::Apply(f, arg) => {
-            let f_val = eval(f, env, trace, step_count)?; // 먼저 f를 평가
-            match f_val {
-                Value::Closure(mut params, body, mut closure_env) => {
-                    if params.is_empty() {
-                        return Err("Apply: No parameters to apply!".to_string());
-                    }
-
-                    let param_name = params.remove(0);
-                    let arg_val = eval(arg, env, trace, step_count)?;
-                    let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
-                    let renamed_body = alpha_convert(&substituted_body, step_count);
-
-                    if params.is_empty() {
-                        eval(&renamed_body, &mut closure_env, trace, step_count)
-                    } else {
-                        Ok(Value::Closure(params, Box::new(renamed_body), closure_env))
-                    }
-                }
-                _ => {
-                    // f가 Closure가 아니면, 그냥 Apply(f, arg) 로 남기지 말고
-                    // 에러가 아니라 Apply(새로운 f, arg)를 다시 평가해야 해
-                    let applied = Expr::Apply(Box::new(to_expr(&f_val)), Box::new(*arg.clone()));
-                    eval(&applied, env, trace, step_count)
-                }
-            }
-        }
-        Expr::Define(name, expr) => {
-            let val = eval(expr, env, trace, step_count)?;
-            env.insert(name.clone(), val);
-            Ok(Value::Unit)
-        }
-        Expr::Sequence(exprs) => {
-    let mut old_values = HashMap::new();
-    let last_expr = exprs.last().ok_or("Empty sequence")?;
-
-    for expr in &exprs[..exprs.len() - 1] {
-        if let Expr::Define(name, rhs) = expr {
-            let val = eval(rhs, env, trace, step_count)?;
-            if let Some(old) = env.insert(name.clone(), val) {
-                old_values.insert(name.clone(), old);
-            }
-        } else {
-            // Define이 아니면 무시
-            eval(expr, env, trace, step_count)?; // side-effect 발생할 수 있으니 eval은 해야 함
-        }
-    }
-
-    let result = eval(last_expr, env, trace, step_count)?;
-
-    // 스코프 끝나면 환경 복구
-    for (name, old) in old_values {
-        env.insert(name, old);
-    }
-
-    Ok(result)
-}
-    }
-}
-
-fn substitute(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
+fn substitute(expr: &Expr, var: &str, value: &Expr) -> Expr {
     match expr {
         Expr::Var(name) => {
             if name == var {
-                replacement.clone()
+                value.clone()
             } else {
                 Expr::Var(name.clone())
             }
         }
         Expr::Lambda(params, body) => {
             if params.contains(&var.to_string()) {
-                Expr::Lambda(params.clone(), body.clone()) // shadowing
+                Expr::Lambda(params.clone(), body.clone())
             } else {
-                Expr::Lambda(params.clone(), Box::new(substitute(body, var, replacement)))
+                Expr::Lambda(params.clone(), Box::new(substitute(body, var, value)))
             }
         }
         Expr::Apply(f, arg) => {
-            Expr::Apply(
-                Box::new(substitute(f, var, replacement)),
-                Box::new(substitute(arg, var, replacement)),
-                )
+            Expr::Apply(Box::new(substitute(f, var, value)), Box::new(substitute(arg, var, value)))
         }
-        Expr::Define(name, expr) => {
+        Expr::Define(name, rhs) => {
             if name == var {
-                Expr::Define(name.clone(), expr.clone())
+                Expr::Define(name.clone(), rhs.clone())
             } else {
-                Expr::Define(name.clone(), Box::new(substitute(expr, var, replacement)))
+                Expr::Define(name.clone(), Box::new(substitute(rhs, var, value)))
             }
         }
         Expr::Sequence(exprs) => {
-            Expr::Sequence(exprs.iter().map(|e| substitute(e, var, replacement)).collect())
+            Expr::Sequence(exprs.iter().map(|e| substitute(e, var, value)).collect())
         }
     }
 }
 
-fn alpha_convert(expr: &Expr, counter: &mut usize) -> Expr {
+pub fn eval(expr: &Expr, env: &mut Env) -> Result<Value, String> {
     match expr {
         Expr::Var(name) => {
-            Expr::Var(format!("{}#{}", name, *counter))
+            env.get(name)
+                .cloned()
+                .ok_or_else(|| format!("Unbound variable: {}", name))
         }
         Expr::Lambda(params, body) => {
-            let mut new_params = Vec::new();
-            let mut mapping = HashMap::new();
-            for param in params {
-                let new_name = format!("{}#{}", param, *counter);
-                *counter += 1;
-                mapping.insert(param.clone(), new_name.clone());
-                new_params.push(new_name);
-            }
-            let new_body = rename_vars(body, &mapping);
-            Expr::Lambda(new_params, Box::new(new_body))
+            Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
         }
         Expr::Apply(f, arg) => {
-            Expr::Apply(Box::new(alpha_convert(f, counter)), Box::new(alpha_convert(arg, counter)))
+            let f_val = eval(f, env)?;
+            match f_val {
+                Value::Closure(mut params, body, mut closure_env) => {
+                    if params.is_empty() {
+                        return Err("Apply: No parameters to apply!".to_string());
+                    }
+                    let param = params.remove(0);
+                    let arg_val = eval(arg, env)?;
+                    let substituted = substitute(&body, &param, &to_expr(&arg_val));
+                    if params.is_empty() {
+                        eval(&substituted, &mut closure_env)
+                    } else {
+                        Ok(Value::Closure(params, Box::new(substituted), closure_env))
+                    }
+                }
+                _ => Err("Apply: Not a function.".to_string()),
+            }
         }
-        Expr::Define(name, expr) => {
-            Expr::Define(name.clone(), Box::new(alpha_convert(expr, counter)))
-        }
+        Expr::Define(_, _) => Err("Define cannot be evaluated directly".to_string()),
         Expr::Sequence(exprs) => {
-            Expr::Sequence(exprs.iter().map(|e| alpha_convert(e, counter)).collect())
+            let mut old_values = HashMap::new();
+            let last_idx = exprs.len().checked_sub(1).ok_or("Empty sequence")?;
+            for expr in &exprs[..last_idx] {
+                if let Expr::Define(name, rhs) = expr {
+                    let val = eval(rhs, env)?;
+                    if let Some(old) = env.insert(name.clone(), val) {
+                        old_values.insert(name.clone(), old);
+                    }
+                } else {
+                    eval(expr, env)?; // 그냥 평가 (side-effect 가능성)
+                }
+            }
+            let result = eval(&exprs[last_idx], env);
+            for (name, old) in old_values {
+                env.insert(name, old);
+            }
+            result
         }
     }
 }
 
-fn rename_vars(expr: &Expr, mapping: &HashMap<String, String>) -> Expr {
-    match expr {
-        Expr::Var(name) => {
-            if let Some(new_name) = mapping.get(name) {
-                Expr::Var(new_name.clone())
-            } else {
-                Expr::Var(name.clone())
-            }
-        }
-        Expr::Lambda(params, body) => {
-            let new_params: Vec<String> = params.iter()
-                .map(|p| mapping.get(p).unwrap_or(p).clone())
-                .collect();
-            let new_body = rename_vars(body, mapping);
-            Expr::Lambda(new_params, Box::new(new_body))
-        }
-        Expr::Apply(f, arg) => {
-            Expr::Apply(Box::new(rename_vars(f, mapping)), Box::new(rename_vars(arg, mapping)))
-        }
-        Expr::Define(name, expr) => {
-            Expr::Define(name.clone(), Box::new(rename_vars(expr, mapping)))
-        }
-        Expr::Sequence(exprs) => {
-            Expr::Sequence(exprs.iter().map(|e| rename_vars(e, mapping)).collect())
-        }
-    }
-}
-
-fn to_expr(value: &Value) -> Expr {
-    match value {
+fn to_expr(val: &Value) -> Expr {
+    match val {
         Value::Closure(params, body, _) => Expr::Lambda(params.clone(), body.clone()),
         Value::Unit => Expr::Sequence(vec![]),
     }
-}
-
-pub fn normalize(expr: &Expr) -> Expr {
-    fn normalize_rec(expr: &Expr, var_map: &mut HashMap<String, String>, counter: &mut usize) -> Expr {
-        match expr {
-            Expr::Var(name) => {
-                if let Some(new_name) = var_map.get(name) {
-                    Expr::Var(new_name.clone())
-                } else {
-                    Expr::Var(name.clone())
-                }
-            }
-            Expr::Lambda(params, body) => {
-                let mut new_params = Vec::new();
-                for param in params {
-                    let new_name = format!("v{}", *counter);
-                    *counter += 1;
-                    var_map.insert(param.clone(), new_name.clone());
-                    new_params.push(new_name);
-                }
-                let new_body = normalize_rec(body, var_map, counter);
-                for param in params {
-                    var_map.remove(param);
-                }
-                Expr::Lambda(new_params, Box::new(new_body))
-            }
-            Expr::Apply(f, arg) => {
-                Expr::Apply(
-                    Box::new(normalize_rec(f, var_map, counter)),
-                    Box::new(normalize_rec(arg, var_map, counter)),
-                    )
-            }
-            Expr::Define(name, expr) => {
-                Expr::Define(name.clone(), Box::new(normalize_rec(expr, var_map, counter)))
-            }
-            Expr::Sequence(exprs) => {
-                Expr::Sequence(exprs.iter().map(|e| normalize_rec(e, var_map, counter)).collect())
-            }
-        }
-    }
-
-    let mut var_map = HashMap::new();
-    let mut counter = 0;
-    normalize_rec(expr, &mut var_map, &mut counter)
 }

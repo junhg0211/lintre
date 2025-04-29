@@ -1,35 +1,34 @@
 use crate::ast::Expr;
+use regex::Regex;
 
 pub struct Parser<'a> {
-    input: &'a [u8],
+    input: &'a str,
     pos: usize,
+    word_re: Regex,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
-            input: input.as_bytes(),
+            input,
             pos: 0,
+            word_re: Regex::new(r"^[a-zA-Z0-9_]+").unwrap(),
         }
     }
 
-    fn peek(&self) -> Option<u8> {
-        self.input.get(self.pos).cloned()
+    fn peek_char(&self) -> Option<char> {
+        self.input[self.pos..].chars().next()
     }
 
-    fn next(&mut self) -> Option<u8> {
-        let ch = self.peek()?;
-        self.pos += 1;
+    fn next_char(&mut self) -> Option<char> {
+        let ch = self.peek_char()?;
+        self.pos += ch.len_utf8();
         Some(ch)
     }
 
     fn skip_whitespace(&mut self) {
-        while let Some(ch) = self.peek() {
-            if ch == b' ' || ch == b'\n' || ch == b'\r' || ch == b'\t' {
-                self.next();
-            } else {
-                break;
-            }
+        while matches!(self.peek_char(), Some(c) if c.is_whitespace()) {
+            self.next_char();
         }
     }
 
@@ -44,11 +43,10 @@ impl<'a> Parser<'a> {
             if self.pos >= self.input.len() {
                 break;
             }
-            let expr = self.parse_expression()?;
-            exprs.push(expr);
+            exprs.push(self.parse_expression()?);
             self.skip_whitespace();
-            if let Some(b';') = self.peek() {
-                self.next();
+            if self.peek_char() == Some(';') {
+                self.next_char();
             } else {
                 break;
             }
@@ -62,64 +60,57 @@ impl<'a> Parser<'a> {
 
     fn parse_expression(&mut self) -> Result<Expr, String> {
         self.skip_whitespace();
-        match self.peek() {
-            Some(b'(') => {
-                self.next();
+        match self.peek_char() {
+            Some('(') => {
+                self.next_char();
                 let expr = self.parse_document()?;
                 self.skip_whitespace();
-                if self.next() != Some(b')') {
+                if self.next_char() != Some(')') {
                     return Err("Expected ')'".to_string());
                 }
                 Ok(expr)
             }
-            Some(b'L') => {
-                self.next();
+            Some('L') => {
+                self.next_char();
                 self.skip_whitespace();
                 let params = self.parse_words()?;
                 self.skip_whitespace();
-                if self.next() != Some(b'.') {
-                    return Err("Expected '.' after lambda params".to_string());
+                if self.next_char() != Some('.') {
+                    return Err("Expected '.' after lambda parameters".to_string());
                 }
                 let body = self.parse_expression()?;
                 Ok(Expr::Lambda(params, Box::new(body)))
             }
-            Some(ch) if is_word_char(ch) => {
-                let first = self.parse_word()?;
+            Some(_) => {
+                let word = self.parse_word()?;
                 self.skip_whitespace();
-                if let Some(b'=') = self.peek() {
-                    self.next();
+                if self.peek_char() == Some('=') {
+                    self.next_char();
                     let expr = self.parse_expression()?;
-                    Ok(Expr::Define(first, Box::new(expr)))
+                    Ok(Expr::Define(word, Box::new(expr)))
                 } else {
-                    let mut expr = Expr::Var(first);
-                    loop {
+                    let mut expr = Expr::Var(word);
+                    while {
                         self.skip_whitespace();
-                        if let Some(ch) = self.peek() {
-                            if is_word_char(ch) || ch == b'L' || ch == b'(' {
-                                let right = self.parse_expression()?;
-                                expr = Expr::Apply(Box::new(expr), Box::new(right));
-                            } else {
-                                break;
-                            }
-                        } else {
-                            break;
-                        }
+                        matches!(self.peek_char(), Some('L') | Some('(') | Some(c) if c.is_ascii_alphanumeric() || c == '_')
+                    } {
+                        let rhs = self.parse_expression()?;
+                        expr = Expr::Apply(Box::new(expr), Box::new(rhs));
                     }
                     Ok(expr)
                 }
             }
-            Some(_) => Err("Unexpected character".to_string()),
             None => Err("Unexpected end of input".to_string()),
         }
     }
 
     fn parse_words(&mut self) -> Result<Vec<String>, String> {
-        let mut words = Vec::new();
+        let mut params = Vec::new();
         loop {
             self.skip_whitespace();
-            if let Some(ch) = self.peek() {
-                if is_word_char(ch) {
-                    words.push(self.parse_word()?);
+            if let Some(c) = self.peek_char() {
+                if c.is_ascii_alphanumeric() || c == '_' {
+                    params.push(self.parse_word()?);
                 } else {
                     break;
                 }
@@ -127,31 +118,20 @@ impl<'a> Parser<'a> {
                 break;
             }
         }
-        if words.is_empty() {
-            Err("Expected at least one word".to_string())
+        if params.is_empty() {
+            Err("Expected at least one word after 'L'".to_string())
         } else {
-            Ok(words)
+            Ok(params)
         }
     }
 
     fn parse_word(&mut self) -> Result<String, String> {
-        let mut s = String::new();
-        while let Some(ch) = self.peek() {
-            if is_word_char(ch) {
-                s.push(ch as char);
-                self.next();
-            } else {
-                break;
-            }
-        }
-        if s.is_empty() {
-            Err("Expected word".to_string())
+        let input = &self.input[self.pos..];
+        if let Some(mat) = self.word_re.find(input) {
+            self.pos += mat.end();
+            Ok(mat.as_str().to_string())
         } else {
-            Ok(s)
+            Err("Expected word".to_string())
         }
     }
-}
-
-fn is_word_char(ch: u8) -> bool {
-    (ch as char).is_ascii_alphanumeric() || ch == b'_'
 }
