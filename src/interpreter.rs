@@ -59,6 +59,8 @@ pub fn substitute(expr: &Expr, var: &str, value: &Expr) -> Expr {
 }
 
 pub fn eval_document(expr: &Expr, env: &mut Env, trace_mode: &TraceMode) -> Result<Value, String> {
+    let mut steps = 0;
+
     match expr {
         Expr::Sequence(exprs) => {
             let mut last = Value::Unit;
@@ -69,15 +71,23 @@ pub fn eval_document(expr: &Expr, env: &mut Env, trace_mode: &TraceMode) -> Resu
                     TraceMode::Last => is_last,
                     TraceMode::All => true,
                 };
-                last = eval(expr, env, trace)?;
+                last = eval(expr, env, trace, &mut steps)?;
             }
             Ok(last)
         }
-        _ => eval(expr, env, matches!(trace_mode, TraceMode::Last | TraceMode::All)),
+        _ => {
+            eval(expr, env, matches!(trace_mode, TraceMode::Last | TraceMode::All), &mut steps)
+        }
     }
 }
 
-pub fn eval(expr: &Expr, env: &mut Env, trace: bool) -> Result<Value, String> {
+const MAX_STEPS: usize = 10000;
+
+pub fn eval(expr: &Expr, env: &mut Env, trace: bool, steps: &mut usize) -> Result<Value, String> {
+    if *steps > MAX_STEPS {
+        return Err("Infinite beta reduction detected!".to_string());
+    }
+
     match expr {
         Expr::Var(name) => {
             if trace {
@@ -94,8 +104,10 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool) -> Result<Value, String> {
             Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
         }
         Expr::Apply(func, arg) => {
-            let func_val = eval(func, env, trace)?;
-            let arg_val = eval(arg, env, trace)?;
+            *steps += 1; // <-- 여기서 스텝 수 증가
+
+            let func_val = eval(func, env, trace, steps)?;
+            let arg_val = eval(arg, env, trace, steps)?;
 
             match func_val {
                 Value::Closure(mut params, body, mut closure_env) => {
@@ -116,7 +128,7 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool) -> Result<Value, String> {
                     }
 
                     if params.is_empty() {
-                        eval(&substituted_body, &mut closure_env, trace)
+                        eval(&substituted_body, &mut closure_env, trace, steps)
                     } else {
                         Ok(Value::Closure(params, Box::new(substituted_body), closure_env))
                     }
@@ -125,7 +137,7 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool) -> Result<Value, String> {
             }
         }
         Expr::Define(name, expr) => {
-            let val = eval(expr, env, trace)?;
+            let val = eval(expr, env, trace, steps)?;
             env.insert(name.clone(), val.clone());
             if trace {
                 println!("Define variable: {}", name);
@@ -134,9 +146,8 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool) -> Result<Value, String> {
         }
         Expr::Sequence(exprs) => {
             let mut last = Value::Unit;
-            for (i, expr) in exprs.iter().enumerate() {
-                let is_last = i == exprs.len() - 1;
-                last = eval(expr, env, trace)?;
+            for expr in exprs {
+                last = eval(expr, env, trace, steps)?;
             }
             Ok(last)
         }
