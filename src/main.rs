@@ -8,8 +8,6 @@ use parser::Parser;
 use ast::Expr;
 use interpreter::{Env, Value, eval};
 
-use std::collections::HashSet;
-
 pub enum TraceMode {
     None,
     Last,
@@ -20,13 +18,13 @@ fn main() -> Result<(), String> {
     let args: Vec<String> = std::env::args().collect();
 
     let (trace_mode, filename) = match args.get(1) {
-        Some(flag) if flag == "-b" => (TraceMode::Last, args.get(2).ok_or("No filename")?),
-        Some(flag) if flag == "-B" => (TraceMode::All, args.get(2).ok_or("No filename")?),
-        Some(file) => (TraceMode::None, Some(file)),
+        Some(flag) if flag == "-b" => (TraceMode::Last, args.get(2).ok_or("No filename provided")?),
+        Some(flag) if flag == "-B" => (TraceMode::All, args.get(2).ok_or("No filename provided")?),
+        Some(file) => (TraceMode::None, file),
         None => return Err("No filename provided".to_string()),
     };
 
-    let input = std::fs::read_to_string(filename)
+    let input = std::fs::read_to_string(filename.as_str())
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
     println!("--- Source ---\n{}\n", input);
@@ -52,7 +50,7 @@ fn main() -> Result<(), String> {
     let result = eval_document(&ast, &mut env, &mut step_count, &trace_mode)?;
 
     println!("\n--- Result ---");
-    println!("{:?}", result);
+    pretty_print_value_with_env(&result, &env);
 
     Ok(())
 }
@@ -79,30 +77,84 @@ fn eval_document(expr: &Expr, env: &mut Env, step_count: &mut usize, trace_mode:
     }
 }
 
-fn pretty_print_ast(expr: &Expr, indent: usize) {
-    let pad = " ".repeat(indent);
+fn pretty_print_value_with_env(value: &Value, env: &Env) {
+    for (name, captured_val) in env {
+        if *captured_val == *value {
+            println!("{}", name);
+            return;
+        }
+    }
+
+    match value {
+        Value::Closure(params, body, capture_env) => {
+            print!("Closure(");
+            for (i, param) in params.iter().enumerate() {
+                if i > 0 {
+                    print!(", ");
+                }
+                print!("{}", param);
+            }
+            print!(") -> ");
+            pretty_print_expr(body);
+            println!();
+
+            if !capture_env.is_empty() {
+                println!("Captured:");
+                for (k, v) in capture_env {
+                    print!("  {}: ", k);
+                    match v {
+                        Value::Closure(_, _, _) => {
+                            println!("Closure(...)");
+                        }
+                        Value::Unit => {
+                            println!("unit");
+                        }
+                    }
+                }
+            }
+        }
+        Value::Unit => {
+            println!("unit");
+        }
+    }
+}
+
+fn pretty_print_expr(expr: &Expr) {
     match expr {
-        Expr::Var(name) => println!("{}Var({})", pad, name),
-        Expr::Lambda(params, body) => {
-            println!("{}Lambda({:?})", pad, params);
-            pretty_print_ast(body, indent + 2);
+        Expr::Var(name) => {
+            print!("{}", name);
         }
         Expr::Apply(f, arg) => {
-            println!("{}Apply(", pad);
-            pretty_print_ast(f, indent + 2);
-            pretty_print_ast(arg, indent + 2);
-            println!("{})", pad);
+            print!("(");
+            pretty_print_expr(f);
+            print!(" ");
+            pretty_print_expr(arg);
+            print!(")");
+        }
+        Expr::Lambda(params, body) => {
+            print!("L ");
+            for (i, param) in params.iter().enumerate() {
+                if i > 0 {
+                    print!(" ");
+                }
+                print!("{}", param);
+            }
+            print!(". ");
+            pretty_print_expr(body);
         }
         Expr::Define(name, expr) => {
-            println!("{}Define({})", pad, name);
-            pretty_print_ast(expr, indent + 2);
+            print!("{} = ", name);
+            pretty_print_expr(expr);
         }
         Expr::Sequence(exprs) => {
-            println!("{}Sequence(", pad);
-            for e in exprs {
-                pretty_print_ast(e, indent + 2);
+            print!("(");
+            for (i, e) in exprs.iter().enumerate() {
+                if i > 0 {
+                    print!("; ");
+                }
+                pretty_print_expr(e);
             }
-            println!("{})", pad);
+            print!(")");
         }
     }
 }
