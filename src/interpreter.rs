@@ -36,12 +36,13 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
                     }
                     let param_name = params.remove(0);
                     let arg_val = eval(arg, env, trace, step_count)?;
-                    closure_env.insert(param_name, arg_val);
+
+                    let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
 
                     if params.is_empty() {
-                        eval(&body, &mut closure_env, trace, step_count)
+                        eval(&substituted_body, &mut closure_env, trace, step_count)
                     } else {
-                        Ok(Value::Closure(params, body.clone(), closure_env))
+                        Ok(Value::Closure(params, Box::new(substituted_body), closure_env))
                     }
                 }
                 _ => Err("Apply: Function is not a closure".to_string()),
