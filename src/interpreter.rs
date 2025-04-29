@@ -27,30 +27,32 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
             Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
         }
         Expr::Apply(f, arg) => {
-            let f_val = eval(f, env, trace, step_count)?;
-            match f_val {
-                Value::Closure(mut params, body, mut closure_env) => {
-                    if params.is_empty() {
-                        return Err("Apply: No parameters to apply!".to_string());
-                    }
+    let f_val = eval(f, env, trace, step_count)?; // 먼저 f를 평가
+    match f_val {
+        Value::Closure(mut params, body, mut closure_env) => {
+            if params.is_empty() {
+                return Err("Apply: No parameters to apply!".to_string());
+            }
 
-                    let param_name = params.remove(0);
-                    let arg_val = eval(arg, env, trace, step_count)?;
-                    let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
-                    let renamed_body = alpha_convert(&substituted_body, step_count);
+            let param_name = params.remove(0);
+            let arg_val = eval(arg, env, trace, step_count)?;
+            let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
+            let renamed_body = alpha_convert(&substituted_body, step_count);
 
-                    if params.is_empty() {
-                        // 모든 인자가 적용됐으면 body까지 평가
-                        let result = eval(&renamed_body, &mut closure_env, trace, step_count)?;
-                        Ok(result)
-                    } else {
-                        // 일부 param 남았으면 Closure 반환
-                        Ok(Value::Closure(params, Box::new(renamed_body), closure_env))
-                    }
-                }
-                _ => Err("Apply: Function is not a closure".to_string()),
+            if params.is_empty() {
+                eval(&renamed_body, &mut closure_env, trace, step_count)
+            } else {
+                Ok(Value::Closure(params, Box::new(renamed_body), closure_env))
             }
         }
+        _ => {
+            // f가 Closure가 아니면, 그냥 Apply(f, arg) 로 남기지 말고
+            // 에러가 아니라 Apply(새로운 f, arg)를 다시 평가해야 해
+            let applied = Expr::Apply(Box::new(to_expr(&f_val)), Box::new(arg.clone()));
+            eval(&applied, env, trace, step_count)
+        }
+    }
+}
         Expr::Define(name, expr) => {
             let val = eval(expr, env, trace, step_count)?;
             env.insert(name.clone(), val);
