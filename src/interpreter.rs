@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-
 use crate::ast::Expr;
 
 pub type Env = HashMap<String, Value>;
@@ -28,36 +27,30 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
             Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
         }
         Expr::Apply(f, arg) => {
-    *step_count += 1;
-    if *step_count > 10000 {
-        return Err("Infinite beta reduction detected!".to_string());
-    }
+            let f_val = eval(f, env, trace, step_count)?;
+            match f_val {
+                Value::Closure(mut params, body, mut closure_env) => {
+                    if params.is_empty() {
+                        return Err("Apply: No parameters to apply!".to_string());
+                    }
 
-    let f_val = eval(f, env, trace, step_count)?;
-    match f_val {
-        Value::Closure(mut params, body, mut closure_env) => {
-            if params.is_empty() {
-                return Err("Apply: No parameters to apply!".to_string());
-            }
+                    // Alpha 변환: 변수 fresh rename
+                    let suffix = format!("#{}", *step_count);
+                    let body = alpha_convert(&body, &suffix);
 
-            let param_name = params.remove(0);
-            let arg_val = eval(arg, env, trace, step_count)?;
-            let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
+                    let param_name = params.remove(0);
+                    let arg_val = eval(arg, env, trace, step_count)?;
+                    let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
 
-            if params.is_empty() {
-                eval(&substituted_body, &mut closure_env, trace, step_count)
-            } else {
-                // 여기가 핵심! 나머지 param들이 남아있는 경우
-                Ok(Value::Closure(params, Box::new(substituted_body), closure_env))
+                    if params.is_empty() {
+                        eval(&substituted_body, &mut closure_env, trace, step_count)
+                    } else {
+                        Ok(Value::Closure(params, Box::new(substituted_body), closure_env))
+                    }
+                }
+                _ => Err("Apply: Function is not a closure".to_string()),
             }
         }
-        _ => {
-            // f가 단순한 Var나 다른 것이라면
-            let applied_expr = Expr::Apply(Box::new(to_expr(&f_val)), arg.clone());
-            eval(&applied_expr, env, trace, step_count)
-        }
-    }
-}
         Expr::Define(name, expr) => {
             let val = eval(expr, env, trace, step_count)?;
             env.insert(name.clone(), val);
@@ -84,7 +77,7 @@ fn substitute(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
         }
         Expr::Lambda(params, body) => {
             if params.contains(&var.to_string()) {
-                Expr::Lambda(params.clone(), body.clone()) // variable shadowing
+                Expr::Lambda(params.clone(), body.clone()) // 쉐도잉 발생 시 건너뛴다
             } else {
                 Expr::Lambda(params.clone(), Box::new(substitute(body, var, replacement)))
             }
@@ -108,10 +101,65 @@ fn substitute(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
     }
 }
 
+fn alpha_convert(expr: &Expr, suffix: &str) -> Expr {
+    match expr {
+        Expr::Var(name) => {
+            Expr::Var(format!("{}{}", name, suffix))
+        }
+        Expr::Lambda(params, body) => {
+            let new_params: Vec<String> = params.iter().map(|p| format!("{}{}", p, suffix)).collect();
+            let mut mapping = HashMap::new();
+            for (old, new) in params.iter().zip(new_params.iter()) {
+                mapping.insert(old.clone(), new.clone());
+            }
+            let new_body = rename_vars(body, &mapping);
+            Expr::Lambda(new_params, Box::new(new_body))
+        }
+        Expr::Apply(f, arg) => {
+            Expr::Apply(Box::new(alpha_convert(f, suffix)), Box::new(alpha_convert(arg, suffix)))
+        }
+        Expr::Define(name, expr) => {
+            Expr::Define(name.clone(), Box::new(alpha_convert(expr, suffix)))
+        }
+        Expr::Sequence(exprs) => {
+            Expr::Sequence(exprs.iter().map(|e| alpha_convert(e, suffix)).collect())
+        }
+    }
+}
+
+fn rename_vars(expr: &Expr, mapping: &HashMap<String, String>) -> Expr {
+    match expr {
+        Expr::Var(name) => {
+            if let Some(new_name) = mapping.get(name) {
+                Expr::Var(new_name.clone())
+            } else {
+                Expr::Var(name.clone())
+            }
+        }
+        Expr::Lambda(params, body) => {
+            let mut new_mapping = mapping.clone();
+            let new_params: Vec<String> = params.iter().map(|p| {
+                let renamed = new_mapping.get(p).unwrap_or(p).clone()
+            }).collect();
+            let new_body = rename_vars(body, &new_mapping);
+            Expr::Lambda(new_params, Box::new(new_body))
+        }
+        Expr::Apply(f, arg) => {
+            Expr::Apply(Box::new(rename_vars(f, mapping)), Box::new(rename_vars(arg, mapping)))
+        }
+        Expr::Define(name, expr) => {
+            Expr::Define(name.clone(), Box::new(rename_vars(expr, mapping)))
+        }
+        Expr::Sequence(exprs) => {
+            Expr::Sequence(exprs.iter().map(|e| rename_vars(e, mapping)).collect())
+        }
+    }
+}
+
 fn to_expr(value: &Value) -> Expr {
     match value {
         Value::Closure(params, body, _) => Expr::Lambda(params.clone(), body.clone()),
-        Value::Unit => Expr::Sequence(vec![]), // Unit 표현은 비어 있는 Sequence로
+        Value::Unit => Expr::Sequence(vec![]),
     }
 }
 
