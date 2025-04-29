@@ -2,7 +2,7 @@ use crate::ast::Expr;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-fn normalize(expr: &Expr) -> Expr {
+pub fn normalize(expr: &Expr) -> Expr {
     fn normalize_rec(expr: &Expr, var_map: &mut HashMap<String, String>, counter: &mut usize) -> Expr {
         match expr {
             Expr::Var(name) => {
