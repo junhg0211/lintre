@@ -73,7 +73,7 @@ fn closure_eq_ignoring_env(a: &Value, b: &Value) -> bool {
     }
 }
 
-n pretty_print_value_as_source(value: &Value, env: &Env) {
+fn pretty_print_value_as_source(value: &Value, env: &Env) {
     for (name, captured_val) in env {
         if closure_eq_ignoring_env(captured_val, value) {
             println!("{}", name);
