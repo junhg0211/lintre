@@ -6,14 +6,27 @@ use tokenizer::tokenize;
 use parser::Parser;
 use ast::Expr;
 
+enum TraceMode {
+    None,
+    Last,
+    All,
+}
+
 fn main() -> Result<(), String> {
-    // 1. 파일 읽기
-    let input = std::fs::read_to_string("program.txt")
+    let args: Vec<String> = std::env::args().collect();
+
+    let (trace_mode, filename) = match args.get(1) {
+        Some(flag) if flag == "-b" => (TraceMode::Last, args.get(2).ok_or("No filename")?),
+        Some(flag) if flag == "-B" => (TraceMode::All, args.get(2).ok_or("No filename")?),
+        Some(file) => (TraceMode::None, Some(file)),
+        None => return Err("No filename provided".to_string()),
+    };
+
+    let input = std::fs::read_to_string(filename)
         .map_err(|e| format!("Failed to read file: {}", e))?;
-    
+
     println!("--- Source ---\n{}\n", input);
 
-    // 2. 토크나이즈
     let tokens = tokenize(&input)?;
     println!("--- Tokens ---");
     for token in &tokens {
@@ -21,13 +34,20 @@ fn main() -> Result<(), String> {
     }
     println!();
 
-    // 3. 파싱
     let mut parser = Parser::new(tokens);
     let ast = parser.parse_document()?;
 
-    // 4. AST 출력
     println!("--- AST ---");
     pretty_print_ast(&ast, 0);
+    println!();
+
+    println!("--- Evaluation ---");
+
+    let mut env = Env::new();
+    let result = eval_document(&ast, &mut env, &trace_mode)?;
+
+    println!("\n--- Result ---");
+    println!("{:?}", result);
 
     Ok(())
 }
