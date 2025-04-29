@@ -34,18 +34,15 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
                         return Err("Apply: No parameters to apply!".to_string());
                     }
 
-                    // Alpha 변환: 변수 fresh rename
-                    let suffix = format!("#{}", *step_count);
-                    let body = alpha_convert(&body, &suffix);
-
                     let param_name = params.remove(0);
                     let arg_val = eval(arg, env, trace, step_count)?;
                     let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
+                    let renamed_body = alpha_convert(&substituted_body, step_count);
 
                     if params.is_empty() {
-                        eval(&substituted_body, &mut closure_env, trace, step_count)
+                        eval(&renamed_body, &mut closure_env, trace, step_count)
                     } else {
-                        Ok(Value::Closure(params, Box::new(substituted_body), closure_env))
+                        Ok(Value::Closure(params, Box::new(renamed_body), closure_env))
                     }
                 }
                 _ => Err("Apply: Function is not a closure".to_string()),
@@ -77,7 +74,7 @@ fn substitute(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
         }
         Expr::Lambda(params, body) => {
             if params.contains(&var.to_string()) {
-                Expr::Lambda(params.clone(), body.clone()) // 쉐도잉 발생 시 건너뛴다
+                Expr::Lambda(params.clone(), body.clone()) // shadowing
             } else {
                 Expr::Lambda(params.clone(), Box::new(substitute(body, var, replacement)))
             }
@@ -101,28 +98,31 @@ fn substitute(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
     }
 }
 
-fn alpha_convert(expr: &Expr, suffix: &str) -> Expr {
+fn alpha_convert(expr: &Expr, counter: &mut usize) -> Expr {
     match expr {
         Expr::Var(name) => {
-            Expr::Var(format!("{}{}", name, suffix))
+            Expr::Var(format!("{}#{}", name, *counter))
         }
         Expr::Lambda(params, body) => {
-            let new_params: Vec<String> = params.iter().map(|p| format!("{}{}", p, suffix)).collect();
+            let mut new_params = Vec::new();
             let mut mapping = HashMap::new();
-            for (old, new) in params.iter().zip(new_params.iter()) {
-                mapping.insert(old.clone(), new.clone());
+            for param in params {
+                let new_name = format!("{}#{}", param, *counter);
+                *counter += 1;
+                mapping.insert(param.clone(), new_name.clone());
+                new_params.push(new_name);
             }
             let new_body = rename_vars(body, &mapping);
             Expr::Lambda(new_params, Box::new(new_body))
         }
         Expr::Apply(f, arg) => {
-            Expr::Apply(Box::new(alpha_convert(f, suffix)), Box::new(alpha_convert(arg, suffix)))
+            Expr::Apply(Box::new(alpha_convert(f, counter)), Box::new(alpha_convert(arg, counter)))
         }
         Expr::Define(name, expr) => {
-            Expr::Define(name.clone(), Box::new(alpha_convert(expr, suffix)))
+            Expr::Define(name.clone(), Box::new(alpha_convert(expr, counter)))
         }
         Expr::Sequence(exprs) => {
-            Expr::Sequence(exprs.iter().map(|e| alpha_convert(e, suffix)).collect())
+            Expr::Sequence(exprs.iter().map(|e| alpha_convert(e, counter)).collect())
         }
     }
 }
@@ -137,11 +137,10 @@ fn rename_vars(expr: &Expr, mapping: &HashMap<String, String>) -> Expr {
             }
         }
         Expr::Lambda(params, body) => {
-            let mut new_mapping = mapping.clone();
             let new_params: Vec<String> = params.iter()
-                .map(|p| new_mapping.get(p).unwrap_or(p).clone())
+                .map(|p| mapping.get(p).unwrap_or(p).clone())
                 .collect();
-            let new_body = rename_vars(body, &new_mapping);
+            let new_body = rename_vars(body, mapping);
             Expr::Lambda(new_params, Box::new(new_body))
         }
         Expr::Apply(f, arg) => {
