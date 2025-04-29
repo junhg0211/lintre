@@ -138,9 +138,9 @@ fn rename_vars(expr: &Expr, mapping: &HashMap<String, String>) -> Expr {
         }
         Expr::Lambda(params, body) => {
             let mut new_mapping = mapping.clone();
-            let new_params: Vec<String> = params.iter().map(|p| {
-                let renamed = new_mapping.get(p).unwrap_or(p).clone()
-            }).collect();
+            let new_params: Vec<String> = params.iter()
+                .map(|p| new_mapping.get(p).unwrap_or(p).clone())
+                .collect();
             let new_body = rename_vars(body, &new_mapping);
             Expr::Lambda(new_params, Box::new(new_body))
         }
