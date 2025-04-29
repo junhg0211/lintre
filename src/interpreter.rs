@@ -2,6 +2,50 @@ use crate::ast::Expr;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+fn normalize(expr: &Expr) -> Expr {
+    fn normalize_rec(expr: &Expr, var_map: &mut HashMap<String, String>, counter: &mut usize) -> Expr {
+        match expr {
+            Expr::Var(name) => {
+                if let Some(new_name) = var_map.get(name) {
+                    Expr::Var(new_name.clone())
+                } else {
+                    Expr::Var(name.clone())
+                }
+            }
+            Expr::Lambda(params, body) => {
+                let mut new_params = Vec::new();
+                for param in params {
+                    let new_name = format!("v{}", *counter);
+                    *counter += 1;
+                    var_map.insert(param.clone(), new_name.clone());
+                    new_params.push(new_name);
+                }
+                let new_body = normalize_rec(body, var_map, counter);
+                for param in params {
+                    var_map.remove(param);
+                }
+                Expr::Lambda(new_params, Box::new(new_body))
+            }
+            Expr::Apply(f, arg) => {
+                Expr::Apply(
+                    Box::new(normalize_rec(f, var_map, counter)),
+                    Box::new(normalize_rec(arg, var_map, counter)),
+                    )
+            }
+            Expr::Define(name, expr) => {
+                Expr::Define(name.clone(), Box::new(normalize_rec(expr, var_map, counter)))
+            }
+            Expr::Sequence(exprs) => {
+                Expr::Sequence(exprs.iter().map(|e| normalize_rec(e, var_map, counter)).collect())
+            }
+        }
+    }
+
+    let mut var_map = HashMap::new();
+    let mut counter = 0;
+    normalize_rec(expr, &mut var_map, &mut counter)
+}
+
 pub type Env = HashMap<String, Value>;
 
 #[derive(Debug, Clone, PartialEq)]
