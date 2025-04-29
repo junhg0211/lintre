@@ -91,18 +91,18 @@ impl Parser {
     }
 
     fn parse_function(&mut self) -> Result<Expr, String> {
-        match self.peek() {
+        match self.peek().cloned() {
             Some(Token::Word(name)) => {
-                self.next();
-                Ok(Expr::Var(name.clone()))
+                self.next(); // 이제 안전하게 mutable borrow 가능
+                Ok(Expr::Var(name))
             }
             Some(Token::Lambda) => {
                 self.next(); // consume L
 
                 let mut params = Vec::new();
-                while let Some(Token::Word(name)) = self.peek() {
-                    params.push(name.clone());
+                while let Some(Token::Word(name)) = self.peek().cloned() {
                     self.next();
+                    params.push(name);
                 }
 
                 match self.next() {
