@@ -74,7 +74,7 @@ impl Parser {
         Ok(Expr::Define(name, Box::new(expr)))
     }
 
-    fn parse_apply(&mut self) -> Result<Expr> {
+    fn parse_apply(&mut self) -> Result<Expr, String> {
         let mut expr = self.parse_function()?;
 
         while matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Lambda) | Some(Token::LParen)) {

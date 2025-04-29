@@ -22,7 +22,7 @@ fn main() -> Result<(), String> {
     let (trace_mode, filename) = match args.get(1) {
         Some(flag) if flag == "-b" => (TraceMode::Last, args.get(2).ok_or("No filename")?),
         Some(flag) if flag == "-B" => (TraceMode::All, args.get(2).ok_or("No filename")?),
-        Some(file) => (TraceMode::None, Some(file)),
+        Some(file) => (TraceMode::None, file),
         None => return Err("No filename provided".to_string()),
     };
 
