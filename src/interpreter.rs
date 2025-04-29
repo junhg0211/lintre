@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 pub type Env = HashMap<String, Value>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     Closure(Vec<String>, Box<Expr>, Env),
     Unit,

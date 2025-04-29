@@ -92,7 +92,10 @@ impl<'a> Parser<'a> {
                     let mut expr = Expr::Var(word);
                     while {
                         self.skip_whitespace();
-                        matches!(self.peek_char(), Some('L') | Some('(') | Some(c) if c.is_ascii_alphanumeric() || c == '_')
+                        match self.peek_char() {
+                            Some(c) if c == 'L' || c == '(' || c.is_ascii_alphanumeric() || c == '_' => true,
+                            _ => false,
+                        }
                     } {
                         let rhs = self.parse_expression()?;
                         expr = Expr::Apply(Box::new(expr), Box::new(rhs));
