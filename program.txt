@@ -7,4 +7,4 @@ xor = L a b. (
     a (not b) b
 );
 
-xor true
+xor true true

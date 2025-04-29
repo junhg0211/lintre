@@ -10,7 +10,7 @@ use interpreter::{Env, Value, eval};
 
 use std::collections::HashSet;
 
-enum TraceMode {
+pub enum TraceMode {
     None,
     Last,
     All,
@@ -48,7 +48,7 @@ fn main() -> Result<(), String> {
     println!("--- Evaluation ---");
 
     let mut env = Env::new();
-    let mut seen = HashSet::new();
+    let mut seen: HashSet<Expr> = HashSet::new();
     let result = eval_document(&ast, &mut env, &mut seen, &trace_mode)?;
 
     println!("\n--- Result ---");
@@ -57,7 +57,12 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-fn eval_document(expr: &Expr, env: &mut Env, seen: &mut HashSet<(Vec<String>, Expr)>, trace_mode: &TraceMode) -> Result<Value, String> {
+pub fn eval_document(
+    expr: &Expr,
+    env: &mut Env,
+    seen: &mut HashSet<Expr>,
+    trace_mode: &TraceMode,
+) -> Result<Value, String> {
     match expr {
         Expr::Sequence(exprs) => {
             let mut last = Value::Unit;
