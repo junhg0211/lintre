@@ -64,7 +64,7 @@ fn eval_document(expr: &Expr, env: &mut Env, step_count: &mut usize, trace_mode:
 
 fn pretty_print_value_with_env(value: &Value, env: &Env) {
     for (name, captured_val) in env {
-        if *captured_val == *value {
+        if closure_eq_ignoring_env(captured_val, value) {
             println!("{}", name);
             return;
         }
@@ -101,6 +101,16 @@ fn pretty_print_value_with_env(value: &Value, env: &Env) {
         Value::Unit => {
             println!("unit");
         }
+    }
+}
+
+fn closure_eq_ignoring_env(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Closure(params_a, body_a, _), Value::Closure(params_b, body_b, _)) => {
+            params_a == params_b && body_a == body_b
+        }
+        (Value::Unit, Value::Unit) => true,
+        _ => false,
     }
 }
 
