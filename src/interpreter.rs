@@ -109,7 +109,6 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<(Vec<Str
                         println!("Function body after substitution: {:?}", substituted_body);
                     }
 
-                    // 무한 루프 감지
                     let fingerprint = (params.clone(), substituted_body.clone());
                     if !seen.insert(fingerprint) {
                         return Err("Infinite beta reduction detected!".to_string());
@@ -134,9 +133,47 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<(Vec<Str
         }
         Expr::Sequence(exprs) => {
             let mut last = Value::Unit;
+            let mut defined_vars = Vec::new();
+            let mut old_values = HashMap::new();
+
             for expr in exprs {
-                last = eval(expr, env, trace, seen)?;
+                match expr {
+                    Expr::Define(name, rhs) => {
+                        let val = eval(rhs, env, trace, seen)?;
+
+                        // 기존 값이 있으면 기억해놓자
+                        if let Some(old) = env.get(name).cloned() {
+                            old_values.insert(name.clone(), old);
+                        } else {
+                            defined_vars.push(name.clone()); // 새로 정의된 것만 따로 기억
+                        }
+
+                        env.insert(name.clone(), val);
+
+                        if trace {
+                            println!("Define (in block) variable: {}", name);
+                        }
+                    }
+                    _ => {
+                        last = eval(expr, env, trace, seen)?;
+                    }
+                }
             }
+
+            // 블록 끝났을 때
+            for name in defined_vars {
+                env.remove(&name); // 새로 만든 건 그냥 삭제
+                if trace {
+                    println!("Remove variable after block: {}", name);
+                }
+            }
+            for (name, old_val) in old_values {
+                env.insert(name, old_val); // 덮어쓴 건 복구
+                if trace {
+                    println!("Restore variable after block: {}", name);
+                }
+            }
+
             Ok(last)
         }
     }
