@@ -37,6 +37,7 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
                     let param_name = params.remove(0);
                     let arg_val = eval(arg, env, trace, step_count)?;
 
+                    // substitute param_name with arg_val in body
                     let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
 
                     if params.is_empty() {
@@ -60,6 +61,48 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
             }
             Ok(last)
         }
+    }
+}
+
+fn substitute(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
+    match expr {
+        Expr::Var(name) => {
+            if name == var {
+                replacement.clone()
+            } else {
+                Expr::Var(name.clone())
+            }
+        }
+        Expr::Lambda(params, body) => {
+            if params.contains(&var.to_string()) {
+                Expr::Lambda(params.clone(), body.clone()) // variable shadowing
+            } else {
+                Expr::Lambda(params.clone(), Box::new(substitute(body, var, replacement)))
+            }
+        }
+        Expr::Apply(f, arg) => {
+            Expr::Apply(
+                Box::new(substitute(f, var, replacement)),
+                Box::new(substitute(arg, var, replacement)),
+            )
+        }
+        Expr::Define(name, expr) => {
+            if name == var {
+                Expr::Define(name.clone(), expr.clone())
+            } else {
+                Expr::Define(name.clone(), Box::new(substitute(expr, var, replacement)))
+            }
+        }
+        Expr::Sequence(exprs) => {
+            Expr::Sequence(exprs.iter().map(|e| substitute(e, var, replacement)).collect())
+        }
+    }
+}
+
+fn to_expr(value: &Value) -> Expr {
+    match value {
+        Value::Closure(params, body, _) => Expr::Lambda(params.clone(), body.clone()),
+        Value::Unit => Expr::Sequence(vec![]), // Unit 표현은 비어 있는 Sequence로
     }
 }
 
@@ -105,46 +148,4 @@ pub fn normalize(expr: &Expr) -> Expr {
     let mut var_map = HashMap::new();
     let mut counter = 0;
     normalize_rec(expr, &mut var_map, &mut counter)
-}
-
-fn substitute(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
-    match expr {
-        Expr::Var(name) => {
-            if name == var {
-                replacement.clone()
-            } else {
-                Expr::Var(name.clone())
-            }
-        }
-        Expr::Lambda(params, body) => {
-            if params.contains(&var.to_string()) {
-                Expr::Lambda(params.clone(), body.clone()) // param shadowing
-            } else {
-                Expr::Lambda(params.clone(), Box::new(substitute(body, var, replacement)))
-            }
-        }
-        Expr::Apply(f, arg) => {
-            Expr::Apply(
-                Box::new(substitute(f, var, replacement)),
-                Box::new(substitute(arg, var, replacement)),
-            )
-        }
-        Expr::Define(name, expr) => {
-            if name == var {
-                Expr::Define(name.clone(), expr.clone())
-            } else {
-                Expr::Define(name.clone(), Box::new(substitute(expr, var, replacement)))
-            }
-        }
-        Expr::Sequence(exprs) => {
-            Expr::Sequence(exprs.iter().map(|e| substitute(e, var, replacement)).collect())
-        }
-    }
-}
-
-fn to_expr(value: &Value) -> Expr {
-    match value {
-        Value::Closure(params, body, _) => Expr::Lambda(params.clone(), body.clone()),
-        Value::Unit => Expr::Sequence(vec![]), // or some Unit expr
-    }
 }
