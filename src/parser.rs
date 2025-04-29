@@ -17,9 +17,7 @@ impl Parser {
 
     fn next(&mut self) -> Option<&Token> {
         let tok = self.tokens.get(self.pos);
-        if tok.is_some() {
-            self.pos += 1;
-        }
+        if tok.is_some() { self.pos += 1; }
         tok
     }
 
@@ -28,7 +26,7 @@ impl Parser {
         exprs.push(self.parse_expression()?);
 
         while let Some(Token::Semicolon) = self.peek() {
-            self.next(); // consume ;
+            self.next();
             exprs.push(self.parse_expression()?);
         }
 
@@ -40,9 +38,9 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expr, String> {
-        match self.peek() {
+        match self.peek().cloned() {
             Some(Token::LParen) => {
-                self.next(); // consume (
+                self.next();
                 let expr = self.parse_document()?;
                 match self.next() {
                     Some(Token::RParen) => Ok(expr),
@@ -50,7 +48,6 @@ impl Parser {
                 }
             }
             Some(Token::Word(_)) => {
-                // Lookahead해서 다음이 Equal이면 define
                 if let Some(Token::Equal) = self.tokens.get(self.pos + 1) {
                     self.parse_define()
                 } else {
@@ -69,20 +66,18 @@ impl Parser {
             Some(Token::Word(name)) => name.clone(),
             _ => return Err("Expected word in define".to_string()),
         };
-
         match self.next() {
             Some(Token::Equal) => (),
             _ => return Err("Expected '=' after word".to_string()),
-        };
-
+        }
         let expr = self.parse_expression()?;
         Ok(Expr::Define(name, Box::new(expr)))
     }
 
-    fn parse_apply(&mut self) -> Result<Expr, String> {
+    fn parse_apply(&mut self) -> Result<Expr> {
         let mut expr = self.parse_function()?;
 
-        while let Some(Token::Word(_)) | Some(Token::Lambda) | Some(Token::LParen) = self.peek() {
+        while matches!(self.peek(), Some(Token::Word(_)) | Some(Token::Lambda) | Some(Token::LParen)) {
             let arg = self.parse_function()?;
             expr = Expr::Apply(Box::new(expr), Box::new(arg));
         }
@@ -93,28 +88,25 @@ impl Parser {
     fn parse_function(&mut self) -> Result<Expr, String> {
         match self.peek().cloned() {
             Some(Token::Word(name)) => {
-                self.next(); // 이제 안전하게 mutable borrow 가능
+                self.next();
                 Ok(Expr::Var(name))
             }
             Some(Token::Lambda) => {
-                self.next(); // consume L
-
+                self.next();
                 let mut params = Vec::new();
                 while let Some(Token::Word(name)) = self.peek().cloned() {
                     self.next();
                     params.push(name);
                 }
-
                 match self.next() {
                     Some(Token::Dot) => (),
                     _ => return Err("Expected '.' after lambda parameters".to_string()),
                 }
-
                 let body = self.parse_expression()?;
                 Ok(Expr::Lambda(params, Box::new(body)))
             }
             Some(Token::LParen) => {
-                self.next(); // consume (
+                self.next();
                 let expr = self.parse_document()?;
                 match self.next() {
                     Some(Token::RParen) => Ok(expr),

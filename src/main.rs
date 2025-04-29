@@ -1,10 +1,14 @@
 mod tokenizer;
 mod parser;
 mod ast;
+mod interpreter;
 
 use tokenizer::tokenize;
 use parser::Parser;
 use ast::Expr;
+use interpreter::{Env, Value, eval};
+
+use std::collections::HashSet;
 
 enum TraceMode {
     None,
@@ -44,7 +48,8 @@ fn main() -> Result<(), String> {
     println!("--- Evaluation ---");
 
     let mut env = Env::new();
-    let result = eval_document(&ast, &mut env, &trace_mode)?;
+    let mut seen = HashSet::new();
+    let result = eval_document(&ast, &mut env, &mut seen, &trace_mode)?;
 
     println!("\n--- Result ---");
     println!("{:?}", result);
@@ -52,10 +57,30 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-// AST를 보기 좋게 출력하는 도우미 함수
+fn eval_document(expr: &Expr, env: &mut Env, seen: &mut HashSet<(Vec<String>, Expr)>, trace_mode: &TraceMode) -> Result<Value, String> {
+    match expr {
+        Expr::Sequence(exprs) => {
+            let mut last = Value::Unit;
+            for (i, expr) in exprs.iter().enumerate() {
+                let is_last = i == exprs.len() - 1;
+                let trace = match trace_mode {
+                    TraceMode::None => false,
+                    TraceMode::Last => is_last,
+                    TraceMode::All => true,
+                };
+                last = eval(expr, env, trace, seen)?;
+            }
+            Ok(last)
+        }
+        _ => {
+            let trace = matches!(trace_mode, TraceMode::Last | TraceMode::All);
+            eval(expr, env, trace, seen)
+        }
+    }
+}
+
 fn pretty_print_ast(expr: &Expr, indent: usize) {
     let pad = " ".repeat(indent);
-
     match expr {
         Expr::Var(name) => println!("{}Var({})", pad, name),
         Expr::Lambda(params, body) => {

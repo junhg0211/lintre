@@ -1,17 +1,24 @@
 use crate::ast::Expr;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+pub type Env = HashMap<String, Value>;
+
+#[derive(Debug, Clone)]
+pub enum Value {
+    Closure(Vec<String>, Box<Expr>, Env),
+    Unit,
+}
+
+// 전역 counter: fresh 변수 이름 만들 때 사용
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-/// 새로운 변수 이름을 만들어주는 함수
 fn fresh_var_name(base: &str) -> String {
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     format!("{}#{}", base, id)
 }
 
-/// substitute 함수: expr 안의 var 이름을 value로 대체한다.
-/// 만약 내부 람다 매개변수와 var가 겹치면, fresh 이름으로 알파 변환을 수행한다.
+/// 알파 변환과 substitution 수행
 pub fn substitute(expr: &Expr, var: &str, value: &Expr) -> Expr {
     match expr {
         Expr::Var(name) => {
@@ -29,7 +36,6 @@ pub fn substitute(expr: &Expr, var: &str, value: &Expr) -> Expr {
         }
         Expr::Lambda(params, body) => {
             if params.contains(&var.to_string()) {
-                // 충돌 발생. 알파 변환 수행
                 let mut new_params = Vec::new();
                 let mut new_body = (**body).clone();
 
@@ -45,7 +51,6 @@ pub fn substitute(expr: &Expr, var: &str, value: &Expr) -> Expr {
 
                 Expr::Lambda(new_params, Box::new(substitute(&new_body, var, value)))
             } else {
-                // 충돌 없으면 그냥 재귀적으로 치환
                 Expr::Lambda(params.clone(), Box::new(substitute(body, var, value)))
             }
         }
@@ -58,36 +63,15 @@ pub fn substitute(expr: &Expr, var: &str, value: &Expr) -> Expr {
     }
 }
 
-pub fn eval_document(expr: &Expr, env: &mut Env, trace_mode: &TraceMode) -> Result<Value, String> {
-    let mut steps = 0;
-
-    match expr {
-        Expr::Sequence(exprs) => {
-            let mut last = Value::Unit;
-            for (i, expr) in exprs.iter().enumerate() {
-                let is_last = i == exprs.len() - 1;
-                let trace = match trace_mode {
-                    TraceMode::None => false,
-                    TraceMode::Last => is_last,
-                    TraceMode::All => true,
-                };
-                last = eval(expr, env, trace, &mut steps)?;
-            }
-            Ok(last)
-        }
-        _ => {
-            eval(expr, env, matches!(trace_mode, TraceMode::Last | TraceMode::All), &mut steps)
-        }
+fn to_expr(value: &Value) -> Expr {
+    match value {
+        Value::Closure(params, body, _) => Expr::Lambda(params.clone(), body.clone()),
+        Value::Unit => Expr::Var("unit".to_string()),
     }
 }
 
-const MAX_STEPS: usize = 10000;
-
-pub fn eval(expr: &Expr, env: &mut Env, trace: bool, steps: &mut usize) -> Result<Value, String> {
-    if *steps > MAX_STEPS {
-        return Err("Infinite beta reduction detected!".to_string());
-    }
-
+/// eval 함수
+pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<(Vec<String>, Expr)>) -> Result<Value, String> {
     match expr {
         Expr::Var(name) => {
             if trace {
@@ -104,10 +88,8 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, steps: &mut usize) -> Resul
             Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
         }
         Expr::Apply(func, arg) => {
-            *steps += 1; // <-- 여기서 스텝 수 증가
-
-            let func_val = eval(func, env, trace, steps)?;
-            let arg_val = eval(arg, env, trace, steps)?;
+            let func_val = eval(func, env, trace, seen)?;
+            let arg_val = eval(arg, env, trace, seen)?;
 
             match func_val {
                 Value::Closure(mut params, body, mut closure_env) => {
@@ -127,8 +109,14 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, steps: &mut usize) -> Resul
                         println!("Function body after substitution: {:?}", substituted_body);
                     }
 
+                    // 무한 루프 감지
+                    let fingerprint = (params.clone(), substituted_body.clone());
+                    if !seen.insert(fingerprint) {
+                        return Err("Infinite beta reduction detected!".to_string());
+                    }
+
                     if params.is_empty() {
-                        eval(&substituted_body, &mut closure_env, trace, steps)
+                        eval(&substituted_body, &mut closure_env, trace, seen)
                     } else {
                         Ok(Value::Closure(params, Box::new(substituted_body), closure_env))
                     }
@@ -137,7 +125,7 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, steps: &mut usize) -> Resul
             }
         }
         Expr::Define(name, expr) => {
-            let val = eval(expr, env, trace, steps)?;
+            let val = eval(expr, env, trace, seen)?;
             env.insert(name.clone(), val.clone());
             if trace {
                 println!("Define variable: {}", name);
@@ -147,7 +135,7 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, steps: &mut usize) -> Resul
         Expr::Sequence(exprs) => {
             let mut last = Value::Unit;
             for expr in exprs {
-                last = eval(expr, env, trace, steps)?;
+                last = eval(expr, env, trace, seen)?;
             }
             Ok(last)
         }
