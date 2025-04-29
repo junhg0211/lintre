@@ -27,62 +27,62 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
             Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
         }
         Expr::Apply(f, arg) => {
-    let f_val = eval(f, env, trace, step_count)?; // 먼저 f를 평가
-    match f_val {
-        Value::Closure(mut params, body, mut closure_env) => {
-            if params.is_empty() {
-                return Err("Apply: No parameters to apply!".to_string());
-            }
+            let f_val = eval(f, env, trace, step_count)?; // 먼저 f를 평가
+            match f_val {
+                Value::Closure(mut params, body, mut closure_env) => {
+                    if params.is_empty() {
+                        return Err("Apply: No parameters to apply!".to_string());
+                    }
 
-            let param_name = params.remove(0);
-            let arg_val = eval(arg, env, trace, step_count)?;
-            let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
-            let renamed_body = alpha_convert(&substituted_body, step_count);
+                    let param_name = params.remove(0);
+                    let arg_val = eval(arg, env, trace, step_count)?;
+                    let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
+                    let renamed_body = alpha_convert(&substituted_body, step_count);
 
-            if params.is_empty() {
-                eval(&renamed_body, &mut closure_env, trace, step_count)
-            } else {
-                Ok(Value::Closure(params, Box::new(renamed_body), closure_env))
+                    if params.is_empty() {
+                        eval(&renamed_body, &mut closure_env, trace, step_count)
+                    } else {
+                        Ok(Value::Closure(params, Box::new(renamed_body), closure_env))
+                    }
+                }
+                _ => {
+                    // f가 Closure가 아니면, 그냥 Apply(f, arg) 로 남기지 말고
+                    // 에러가 아니라 Apply(새로운 f, arg)를 다시 평가해야 해
+                    let applied = Expr::Apply(Box::new(to_expr(&f_val)), Box::new(*arg.clone()));
+                    eval(&applied, env, trace, step_count)
+                }
             }
         }
-        _ => {
-            // f가 Closure가 아니면, 그냥 Apply(f, arg) 로 남기지 말고
-            // 에러가 아니라 Apply(새로운 f, arg)를 다시 평가해야 해
-            let applied = Expr::Apply(Box::new(to_expr(&f_val)), Box::new(arg.clone()));
-            eval(&applied, env, trace, step_count)
-        }
-    }
-}
         Expr::Define(name, expr) => {
             let val = eval(expr, env, trace, step_count)?;
             env.insert(name.clone(), val);
             Ok(Value::Unit)
         }
-	Expr::Sequence(exprs) => {
-	    let mut last = Value::Unit;
-	    let mut old_values = HashMap::new();
-	
-	    for expr in exprs {
-	        match expr {
-	            Expr::Define(name, rhs) => {
-	                let val = eval(rhs, env, trace, step_count)?;
-	                if let Some(old) = env.insert(name.clone(), val) {
-	                    old_values.insert(name.clone(), old);
-	                }
-	            }
-	            _ => {
-	                last = eval(expr, env, trace, step_count)?;
-	            }
-	        }
-	    }
-	
-	    // 스코프 벗어나면 Define했던 값 복구
-	    for (name, old) in old_values {
-	        env.insert(name, old);
-	    }
-	
-	    Ok(last)
-	}
+        Expr::Sequence(exprs) => {
+            let mut last = Value::Unit;
+            let mut old_values = HashMap::new();
+
+            for expr in exprs {
+                match expr {
+                    Expr::Define(name, rhs) => {
+                        let val = eval(rhs, env, trace, step_count)?;
+                        if let Some(old) = env.insert(name.clone(), val) {
+                            old_values.insert(name.clone(), old);
+                        }
+                    }
+                    _ => {
+                        last = eval(expr, env, trace, step_count)?;
+                    }
+                }
+            }
+
+            // 스코프 벗어나면 Define했던 값 복구
+            for (name, old) in old_values {
+                env.insert(name, old);
+            }
+
+            Ok(last)
+        }
     }
 }
 
@@ -106,7 +106,7 @@ fn substitute(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
             Expr::Apply(
                 Box::new(substitute(f, var, replacement)),
                 Box::new(substitute(arg, var, replacement)),
-            )
+                )
         }
         Expr::Define(name, expr) => {
             if name == var {
@@ -213,7 +213,7 @@ pub fn normalize(expr: &Expr) -> Expr {
                 Expr::Apply(
                     Box::new(normalize_rec(f, var_map, counter)),
                     Box::new(normalize_rec(arg, var_map, counter)),
-                )
+                    )
             }
             Expr::Define(name, expr) => {
                 Expr::Define(name.clone(), Box::new(normalize_rec(expr, var_map, counter)))
