@@ -168,7 +168,7 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<(Vec<Str
                 }
             }
             for (name, old_val) in old_values {
-                env.insert(name, old_val); // 덮어쓴 건 복구
+                env.insert(name.clone(), old_val); // 덮어쓴 건 복구
                 if trace {
                     println!("Restore variable after block: {}", name);
                 }
