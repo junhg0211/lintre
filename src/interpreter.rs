@@ -59,30 +59,30 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
             Ok(Value::Unit)
         }
         Expr::Sequence(exprs) => {
-            let mut last = Value::Unit;
-            let mut old_values = HashMap::new();
+    let mut old_values = HashMap::new();
+    let last_expr = exprs.last().ok_or("Empty sequence")?;
 
-            for expr in exprs {
-                match expr {
-                    Expr::Define(name, rhs) => {
-                        let val = eval(rhs, env, trace, step_count)?;
-                        if let Some(old) = env.insert(name.clone(), val) {
-                            old_values.insert(name.clone(), old);
-                        }
-                    }
-                    _ => {
-                        last = eval(expr, env, trace, step_count)?;
-                    }
-                }
+    for expr in &exprs[..exprs.len() - 1] {
+        if let Expr::Define(name, rhs) = expr {
+            let val = eval(rhs, env, trace, step_count)?;
+            if let Some(old) = env.insert(name.clone(), val) {
+                old_values.insert(name.clone(), old);
             }
-
-            // 스코프 벗어나면 Define했던 값 복구
-            for (name, old) in old_values {
-                env.insert(name, old);
-            }
-
-            Ok(last)
+        } else {
+            // Define이 아니면 무시
+            eval(expr, env, trace, step_count)?; // side-effect 발생할 수 있으니 eval은 해야 함
         }
+    }
+
+    let result = eval(last_expr, env, trace, step_count)?;
+
+    // 스코프 끝나면 환경 복구
+    for (name, old) in old_values {
+        env.insert(name, old);
+    }
+
+    Ok(result)
+}
     }
 }
 
