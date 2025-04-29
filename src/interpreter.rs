@@ -56,13 +56,31 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
             env.insert(name.clone(), val);
             Ok(Value::Unit)
         }
-        Expr::Sequence(exprs) => {
-            let mut last = Value::Unit;
-            for expr in exprs {
-                last = eval(expr, env, trace, step_count)?;
-            }
-            Ok(last)
-        }
+	Expr::Sequence(exprs) => {
+	    let mut last = Value::Unit;
+	    let mut old_values = HashMap::new();
+	
+	    for expr in exprs {
+	        match expr {
+	            Expr::Define(name, rhs) => {
+	                let val = eval(rhs, env, trace, step_count)?;
+	                if let Some(old) = env.insert(name.clone(), val) {
+	                    old_values.insert(name.clone(), old);
+	                }
+	            }
+	            _ => {
+	                last = eval(expr, env, trace, step_count)?;
+	            }
+	        }
+	    }
+	
+	    // 스코프 벗어나면 Define했던 값 복구
+	    for (name, old) in old_values {
+	        env.insert(name, old);
+	    }
+	
+	    Ok(last)
+	}
     }
 }
 
