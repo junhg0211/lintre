@@ -27,10 +27,27 @@ pub fn normalize(expr: &Expr) -> Expr {
                 Expr::Lambda(new_params, Box::new(new_body))
             }
             Expr::Apply(f, arg) => {
-                Expr::Apply(
-                    Box::new(normalize_rec(f, var_map, counter)),
-                    Box::new(normalize_rec(arg, var_map, counter)),
-                    )
+                let f_val = eval(f, env, trace, step_count)?;
+                match f_val {
+                    Value::Closure(params, body, mut closure_env) => {
+                        if params.is_empty() {
+                            return Err("Apply: No parameters to apply!".to_string());
+                        }
+                        let param = &params[0];
+                        let mut new_env = closure_env.clone();
+                        let arg_val = eval(arg, env, trace, step_count)?;
+                        new_env.insert(param.clone(), arg_val);
+
+                        if params.len() == 1 {
+                            eval(&body, &mut new_env, trace, step_count)
+                        } else {
+                            let new_params = params[1..].to_vec();
+                            let new_closure = Value::Closure(new_params, body.clone(), new_env);
+                            Ok(new_closure)
+                        }
+                    }
+                    _ => Err("Apply: Function is not a closure".to_string()),
+                }
             }
             Expr::Define(name, expr) => {
                 Expr::Define(name.clone(), Box::new(normalize_rec(expr, var_map, counter)))
