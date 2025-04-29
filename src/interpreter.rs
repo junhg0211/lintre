@@ -44,9 +44,7 @@ fn substitute(expr: &Expr, var: &str, value: &Expr) -> Expr {
 pub fn eval(expr: &Expr, env: &mut Env) -> Result<Value, String> {
     match expr {
         Expr::Var(name) => {
-            env.get(name)
-                .cloned()
-                .ok_or_else(|| format!("Unbound variable: {}", name))
+            env.get(name).cloned().ok_or_else(|| format!("Unbound variable: {}", name))
         }
         Expr::Lambda(params, body) => {
             Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
@@ -70,21 +68,23 @@ pub fn eval(expr: &Expr, env: &mut Env) -> Result<Value, String> {
                 _ => Err("Apply: Not a function.".to_string()),
             }
         }
-        Expr::Define(_, _) => Err("Define cannot be evaluated directly".to_string()),
+        Expr::Define(_, _) => Err("Cannot directly evaluate a Define.".to_string()),
         Expr::Sequence(exprs) => {
+            if exprs.is_empty() {
+                return Ok(Value::Unit);
+            }
             let mut old_values = HashMap::new();
-            let last_idx = exprs.len().checked_sub(1).ok_or("Empty sequence")?;
-            for expr in &exprs[..last_idx] {
+            for expr in &exprs[..exprs.len() - 1] {
                 if let Expr::Define(name, rhs) = expr {
                     let val = eval(rhs, env)?;
                     if let Some(old) = env.insert(name.clone(), val) {
                         old_values.insert(name.clone(), old);
                     }
                 } else {
-                    eval(expr, env)?; // 그냥 평가 (side-effect 가능성)
+                    eval(expr, env)?;
                 }
             }
-            let result = eval(&exprs[last_idx], env);
+            let result = eval(&exprs[exprs.len() - 1], env);
             for (name, old) in old_values {
                 env.insert(name, old);
             }
