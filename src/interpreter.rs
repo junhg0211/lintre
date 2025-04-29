@@ -105,3 +105,45 @@ pub fn normalize(expr: &Expr) -> Expr {
     let mut counter = 0;
     normalize_rec(expr, &mut var_map, &mut counter)
 }
+
+fn substitute(expr: &Expr, var: &str, replacement: &Expr) -> Expr {
+    match expr {
+        Expr::Var(name) => {
+            if name == var {
+                replacement.clone()
+            } else {
+                Expr::Var(name.clone())
+            }
+        }
+        Expr::Lambda(params, body) => {
+            if params.contains(&var.to_string()) {
+                Expr::Lambda(params.clone(), body.clone()) // param shadowing
+            } else {
+                Expr::Lambda(params.clone(), Box::new(substitute(body, var, replacement)))
+            }
+        }
+        Expr::Apply(f, arg) => {
+            Expr::Apply(
+                Box::new(substitute(f, var, replacement)),
+                Box::new(substitute(arg, var, replacement)),
+            )
+        }
+        Expr::Define(name, expr) => {
+            if name == var {
+                Expr::Define(name.clone(), expr.clone())
+            } else {
+                Expr::Define(name.clone(), Box::new(substitute(expr, var, replacement)))
+            }
+        }
+        Expr::Sequence(exprs) => {
+            Expr::Sequence(exprs.iter().map(|e| substitute(e, var, replacement)).collect())
+        }
+    }
+}
+
+fn to_expr(value: &Value) -> Expr {
+    match value {
+        Value::Closure(params, body, _) => Expr::Lambda(params.clone(), body.clone()),
+        Value::Unit => Expr::Sequence(vec![]), // or some Unit expr
+    }
+}
