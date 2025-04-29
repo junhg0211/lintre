@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type Env = HashMap<String, Value>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Closure(Vec<String>, Box<Expr>, Env),
     Unit,
