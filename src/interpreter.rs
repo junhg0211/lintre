@@ -40,8 +40,11 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
                     let renamed_body = alpha_convert(&substituted_body, step_count);
 
                     if params.is_empty() {
-                        eval(&renamed_body, &mut closure_env, trace, step_count)
+                        // 모든 인자가 적용됐으면 body까지 평가
+                        let result = eval(&renamed_body, &mut closure_env, trace, step_count)?;
+                        Ok(result)
                     } else {
+                        // 일부 param 남았으면 Closure 반환
                         Ok(Value::Closure(params, Box::new(renamed_body), closure_env))
                     }
                 }

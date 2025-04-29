@@ -1,149 +1,55 @@
-mod tokenizer;
-mod parser;
+use std::env;
+use std::fs;
+
 mod ast;
+mod parser;
 mod interpreter;
 
-use tokenizer::tokenize;
+use interpreter::{Env, eval, normalize};
 use parser::Parser;
 use ast::Expr;
-use interpreter::{Env, Value, eval, normalize};
-
-pub enum TraceMode {
-    None,
-    Last,
-    All,
-}
 
 fn main() -> Result<(), String> {
-    let args: Vec<String> = std::env::args().collect();
+    let args: Vec<String> = env::args().collect();
+    let filename = args.get(1).ok_or("No filename provided")?;
 
-    let (trace_mode, filename) = match args.get(1) {
-        Some(flag) if flag == "-b" => (TraceMode::Last, args.get(2).ok_or("No filename provided")?),
-        Some(flag) if flag == "-B" => (TraceMode::All, args.get(2).ok_or("No filename provided")?),
-        Some(file) => (TraceMode::None, file),
-        None => return Err("No filename provided".to_string()),
-    };
-
-    let input = std::fs::read_to_string(filename.as_str())
-        .map_err(|e| format!("Failed to read file: {}", e))?;
-
-    let tokens = tokenize(&input)?;
-    let mut parser = Parser::new(tokens);
-    let ast = parser.parse_document()?;
+    let input = fs::read_to_string(filename).map_err(|e| e.to_string())?;
+    let mut parser = Parser::new(&input);
+    let ast = parser.parse()?;
 
     let mut env = Env::new();
     let mut step_count = 0;
-    let result = eval_document(&ast, &mut env, &mut step_count, &trace_mode)?;
+    let result = eval(&ast, &mut env, false, &mut step_count)?;
 
-    pretty_print_value_as_source(&result, &env);
-
+    println!("{}", pretty_print_value(&result));
     Ok(())
 }
 
-fn eval_document(expr: &Expr, env: &mut Env, step_count: &mut usize, trace_mode: &TraceMode) -> Result<Value, String> {
-    match expr {
-        Expr::Sequence(exprs) => {
-            let mut last = Value::Unit;
-            for (i, expr) in exprs.iter().enumerate() {
-                let is_last = i == exprs.len() - 1;
-                let trace = match trace_mode {
-                    TraceMode::None => false,
-                    TraceMode::Last => is_last,
-                    TraceMode::All => true,
-                };
-                last = eval(expr, env, trace, step_count)?;
-            }
-            Ok(last)
-        }
-        _ => {
-            let trace = matches!(trace_mode, TraceMode::Last | TraceMode::All);
-            eval(expr, env, trace, step_count)
-        }
-    }
-}
-
-fn closure_eq_ignoring_env(a: &Value, b: &Value) -> bool {
-    match (a, b) {
-        (Value::Closure(params_a, body_a, _), Value::Closure(params_b, body_b, _)) => {
-            normalize(&Expr::Lambda(params_a.clone(), body_a.clone()))
-                == normalize(&Expr::Lambda(params_b.clone(), body_b.clone()))
-        }
-        (Value::Unit, Value::Unit) => true,
-        _ => false,
-    }
-}
-
-fn pretty_print_value_as_source(value: &Value, env: &Env) {
-    for (name, captured_val) in env {
-        if closure_eq_ignoring_env(captured_val, value) {
-            println!("{}", name);
-            return;
-        }
-    }
-
+fn pretty_print_value(value: &interpreter::Value) -> String {
     match value {
-        Value::Closure(params, body, _) => {
-            print!("L ");
-            for (i, param) in params.iter().enumerate() {
-                if i > 0 {
-                    print!(" ");
-                }
-                print!("{}", param);
-            }
-            print!(". ");
-            match &**body {
-                Expr::Sequence(exprs) => {
-                    if let Some(last) = exprs.last() {
-                        pretty_print_expr_as_source(last);
-                    }
-                }
-                _ => {
-                    pretty_print_expr_as_source(body);
-                }
-            }
-            println!();
+        interpreter::Value::Closure(params, body, _) => {
+            let param_str = params.join(" ");
+            format!("L {}. {}", param_str, pretty_print_expr(body))
         }
-        Value::Unit => {
-            println!("unit");
-        }
+        interpreter::Value::Unit => String::from("Unit"),
     }
 }
 
-fn pretty_print_expr_as_source(expr: &Expr) {
+fn pretty_print_expr(expr: &Expr) -> String {
     match expr {
-        Expr::Var(name) => {
-            print!("{}", name);
+        Expr::Var(name) => name.clone(),
+        Expr::Lambda(params, body) => {
+            let param_str = params.join(" ");
+            format!("L {}. {}", param_str, pretty_print_expr(body))
         }
         Expr::Apply(f, arg) => {
-            print!("(");
-            pretty_print_expr_as_source(f);
-            print!(" ");
-            pretty_print_expr_as_source(arg);
-            print!(")");
+            format!("({} {})", pretty_print_expr(f), pretty_print_expr(arg))
         }
-        Expr::Lambda(params, body) => {
-            print!("L ");
-            for (i, param) in params.iter().enumerate() {
-                if i > 0 {
-                    print!(" ");
-                }
-                print!("{}", param);
-            }
-            print!(". ");
-            pretty_print_expr_as_source(body);
-        }
-        Expr::Define(name, expr) => {
-            print!("{} = ", name);
-            pretty_print_expr_as_source(expr);
-            print!("; ");
+        Expr::Define(name, e) => {
+            format!("{} = {}", name, pretty_print_expr(e))
         }
         Expr::Sequence(exprs) => {
-            for (i, e) in exprs.iter().enumerate() {
-                if i > 0 {
-                    print!(" ");
-                }
-                pretty_print_expr_as_source(e);
-            }
+            exprs.iter().map(pretty_print_expr).collect::<Vec<_>>().join("; ")
         }
     }
 }
