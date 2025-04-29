@@ -28,27 +28,36 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, step_count: &mut usize) -> 
             Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
         }
         Expr::Apply(f, arg) => {
-            let f_val = eval(f, env, trace, step_count)?;
-            match f_val {
-                Value::Closure(mut params, body, mut closure_env) => {
-                    if params.is_empty() {
-                        return Err("Apply: No parameters to apply!".to_string());
-                    }
-                    let param_name = params.remove(0);
-                    let arg_val = eval(arg, env, trace, step_count)?;
+    *step_count += 1;
+    if *step_count > 10000 {
+        return Err("Infinite beta reduction detected!".to_string());
+    }
 
-                    // substitute param_name with arg_val in body
-                    let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
+    let f_val = eval(f, env, trace, step_count)?;
+    match f_val {
+        Value::Closure(mut params, body, mut closure_env) => {
+            if params.is_empty() {
+                return Err("Apply: No parameters to apply!".to_string());
+            }
 
-                    if params.is_empty() {
-                        eval(&substituted_body, &mut closure_env, trace, step_count)
-                    } else {
-                        Ok(Value::Closure(params, Box::new(substituted_body), closure_env))
-                    }
-                }
-                _ => Err("Apply: Function is not a closure".to_string()),
+            let param_name = params.remove(0);
+            let arg_val = eval(arg, env, trace, step_count)?;
+            let substituted_body = substitute(&body, &param_name, &to_expr(&arg_val));
+
+            if params.is_empty() {
+                eval(&substituted_body, &mut closure_env, trace, step_count)
+            } else {
+                // 여기가 핵심! 나머지 param들이 남아있는 경우
+                Ok(Value::Closure(params, Box::new(substituted_body), closure_env))
             }
         }
+        _ => {
+            // f가 단순한 Var나 다른 것이라면
+            let applied_expr = Expr::Apply(Box::new(to_expr(&f_val)), arg.clone());
+            eval(&applied_expr, env, trace, step_count)
+        }
+    }
+}
         Expr::Define(name, expr) => {
             let val = eval(expr, env, trace, step_count)?;
             env.insert(name.clone(), val);
