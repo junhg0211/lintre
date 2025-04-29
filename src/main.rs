@@ -27,29 +27,14 @@ fn main() -> Result<(), String> {
     let input = std::fs::read_to_string(filename.as_str())
         .map_err(|e| format!("Failed to read file: {}", e))?;
 
-    println!("--- Source ---\n{}\n", input);
-
     let tokens = tokenize(&input)?;
-    println!("--- Tokens ---");
-    for token in &tokens {
-        println!("{:?}", token);
-    }
-    println!();
-
     let mut parser = Parser::new(tokens);
     let ast = parser.parse_document()?;
-
-    println!("--- AST ---");
-    pretty_print_ast(&ast, 0);
-    println!();
-
-    println!("--- Evaluation ---");
 
     let mut env = Env::new();
     let mut step_count = 0;
     let result = eval_document(&ast, &mut env, &mut step_count, &trace_mode)?;
 
-    println!("\n--- Result ---");
     pretty_print_value_with_env(&result, &env);
 
     Ok(())
