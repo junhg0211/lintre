@@ -22,7 +22,7 @@ fn main() -> Result<(), String> {
     let (trace_mode, filename) = match args.get(1) {
         Some(flag) if flag == "-b" => (TraceMode::Last, args.get(2).ok_or("No filename")?),
         Some(flag) if flag == "-B" => (TraceMode::All, args.get(2).ok_or("No filename")?),
-        Some(file) => (TraceMode::None, file),
+        Some(file) => (TraceMode::None, Some(file)),
         None => return Err("No filename provided".to_string()),
     };
 
@@ -48,8 +48,8 @@ fn main() -> Result<(), String> {
     println!("--- Evaluation ---");
 
     let mut env = Env::new();
-    let mut seen: HashSet<Expr> = HashSet::new();
-    let result = eval_document(&ast, &mut env, &mut seen, &trace_mode)?;
+    let mut step_count = 0;
+    let result = eval_document(&ast, &mut env, &mut step_count, &trace_mode)?;
 
     println!("\n--- Result ---");
     println!("{:?}", result);
@@ -57,12 +57,7 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-pub fn eval_document(
-    expr: &Expr,
-    env: &mut Env,
-    seen: &mut HashSet<Expr>,
-    trace_mode: &TraceMode,
-) -> Result<Value, String> {
+fn eval_document(expr: &Expr, env: &mut Env, step_count: &mut usize, trace_mode: &TraceMode) -> Result<Value, String> {
     match expr {
         Expr::Sequence(exprs) => {
             let mut last = Value::Unit;
@@ -73,13 +68,13 @@ pub fn eval_document(
                     TraceMode::Last => is_last,
                     TraceMode::All => true,
                 };
-                last = eval(expr, env, trace, seen)?;
+                last = eval(expr, env, trace, step_count)?;
             }
             Ok(last)
         }
         _ => {
             let trace = matches!(trace_mode, TraceMode::Last | TraceMode::All);
-            eval(expr, env, trace, seen)
+            eval(expr, env, trace, step_count)
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::ast::Expr;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub type Env = HashMap<String, Value>;
@@ -10,7 +10,6 @@ pub enum Value {
     Unit,
 }
 
-// 전역 counter: fresh 변수 이름 만들 때 사용
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn fresh_var_name(base: &str) -> String {
@@ -18,7 +17,6 @@ fn fresh_var_name(base: &str) -> String {
     format!("{}#{}", base, id)
 }
 
-/// 알파 변환과 substitution 수행
 pub fn substitute(expr: &Expr, var: &str, value: &Expr) -> Expr {
     match expr {
         Expr::Var(name) => {
@@ -70,53 +68,12 @@ fn to_expr(value: &Value) -> Expr {
     }
 }
 
-/// normalize 함수 추가 (B안)
-fn normalize(expr: &Expr) -> Expr {
-    let mut var_map = HashMap::new();
-    let mut counter = 0;
-    normalize_rec(expr, &mut var_map, &mut counter)
-}
-
-fn normalize_rec(expr: &Expr, var_map: &mut HashMap<String, String>, counter: &mut usize) -> Expr {
-    match expr {
-        Expr::Var(name) => {
-            if let Some(new_name) = var_map.get(name) {
-                Expr::Var(new_name.clone())
-            } else {
-                Expr::Var(name.clone())
-            }
-        }
-        Expr::Lambda(params, body) => {
-            let mut new_params = Vec::new();
-            for param in params {
-                let new_name = format!("v{}", *counter);
-                *counter += 1;
-                var_map.insert(param.clone(), new_name.clone());
-                new_params.push(new_name);
-            }
-            let new_body = normalize_rec(body, var_map, counter);
-            for param in params {
-                var_map.remove(param);
-            }
-            Expr::Lambda(new_params, Box::new(new_body))
-        }
-        Expr::Apply(f, arg) => {
-            Expr::Apply(
-                Box::new(normalize_rec(f, var_map, counter)),
-                Box::new(normalize_rec(arg, var_map, counter)),
-            )
-        }
-        Expr::Define(name, expr) => {
-            Expr::Define(name.clone(), Box::new(normalize_rec(expr, var_map, counter)))
-        }
-        Expr::Sequence(exprs) => {
-            Expr::Sequence(exprs.iter().map(|e| normalize_rec(e, var_map, counter)).collect())
-        }
-    }
-}
-
-/// eval 함수 (normalize 기반 무한루프 탐지)
-pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<Expr>) -> Result<Value, String> {
+pub fn eval(
+    expr: &Expr,
+    env: &mut Env,
+    trace: bool,
+    step_count: &mut usize
+) -> Result<Value, String> {
     match expr {
         Expr::Var(name) => {
             if trace {
@@ -133,8 +90,13 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<Expr>) -
             Ok(Value::Closure(params.clone(), body.clone(), env.clone()))
         }
         Expr::Apply(func, arg) => {
-            let func_val = eval(func, env, trace, seen)?;
-            let arg_val = eval(arg, env, trace, seen)?;
+            *step_count += 1;
+            if *step_count > 10000 {
+                return Err("Infinite beta reduction detected!".to_string());
+            }
+
+            let func_val = eval(func, env, trace, step_count)?;
+            let arg_val = eval(arg, env, trace, step_count)?;
 
             match func_val {
                 Value::Closure(mut params, body, mut closure_env) => {
@@ -154,13 +116,8 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<Expr>) -
                         println!("Function body after substitution: {:?}", substituted_body);
                     }
 
-                    let normalized = normalize(&substituted_body);
-                    if !seen.insert(normalized) {
-                        return Err("Infinite beta reduction detected!".to_string());
-                    }
-
                     if params.is_empty() {
-                        eval(&substituted_body, &mut closure_env, trace, seen)
+                        eval(&substituted_body, &mut closure_env, trace, step_count)
                     } else {
                         Ok(Value::Closure(params, Box::new(substituted_body), closure_env))
                     }
@@ -169,7 +126,7 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<Expr>) -
             }
         }
         Expr::Define(name, expr) => {
-            let val = eval(expr, env, trace, seen)?;
+            let val = eval(expr, env, trace, step_count)?;
             env.insert(name.clone(), val.clone());
             if trace {
                 println!("Define variable: {}", name);
@@ -184,7 +141,7 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<Expr>) -
             for expr in exprs {
                 match expr {
                     Expr::Define(name, rhs) => {
-                        let val = eval(rhs, env, trace, seen)?;
+                        let val = eval(rhs, env, trace, step_count)?;
                         if let Some(old) = env.get(name).cloned() {
                             old_values.insert(name.clone(), old);
                         } else {
@@ -196,7 +153,7 @@ pub fn eval(expr: &Expr, env: &mut Env, trace: bool, seen: &mut HashSet<Expr>) -
                         }
                     }
                     _ => {
-                        last = eval(expr, env, trace, seen)?;
+                        last = eval(expr, env, trace, step_count)?;
                     }
                 }
             }
